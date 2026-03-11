@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import Navbar from "@/components/Navbar";
+import Map from "@/components/Map";
 import { Utensils, MapPin, Clock, CheckCircle, LogOut, UtensilsCrossed } from "lucide-react";
 import { useNavigate, Link } from "react-router-dom";
 import { api, type DonationItem } from "@/lib/api";
@@ -13,8 +14,10 @@ const RecipientDashboard = () => {
   const [availableDonations, setAvailableDonations] = useState<DonationItem[]>([]);
   const [myClaims, setMyClaims] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [claimedDonation, setClaimedDonation] = useState<DonationItem | null>(null);
 
   const navigate = useNavigate();
+  const recentClaims = myClaims.slice(0, 3);
 
   const fetchData = async () => {
     setLoading(true);
@@ -42,16 +45,21 @@ const RecipientDashboard = () => {
     return () => clearInterval(intervalId);
   }, []);
 
-  const handleClaim = async (id: number) => {
-    try {
-      await api.createRequest(id);
-      toast.success("Donation claimed successfully! 🎉");
-      fetchData(); // Refresh data to update lists
-    } catch (error: any) {
-      console.error("Claim failed:", error);
-      toast.error(error.message || "Failed to claim donation");
-    }
-  };
+  const handleClaim = async (donation: DonationItem) => {
+  try {
+    await api.createRequest(donation.id);
+    toast.success("Donation claimed successfully!");
+    setClaimedDonation(donation);
+
+    // 🔥 Remove claimed item from list immediately
+    setAvailableDonations((prev) =>
+      prev.filter((item) => item.id !== donation.id)
+    );
+
+  } catch (error: any) {
+    toast.error(error.message || "Failed to claim donation");
+  }
+};
 
   const handleLogout = () => {
     localStorage.clear();
@@ -128,6 +136,40 @@ const RecipientDashboard = () => {
           </div>
 
           {/* Available Food List */}
+          {claimedDonation && (
+            <Card className="shadow-card mb-8" id="claimed-donation-map">
+              <CardHeader>
+                <CardTitle className="text-green-700">Claimed Successfully</CardTitle>
+                <CardDescription>
+                  You claimed {claimedDonation.name}. Pickup location is shown below.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {claimedDonation.latitude && claimedDonation.longitude ? (
+                  <Map
+                    locations={[
+                      {
+                        lat: claimedDonation.latitude,
+                        lng: claimedDonation.longitude,
+                        name: claimedDonation.name,
+                        title: claimedDonation.name,
+                        description: `${claimedDonation.quantity} items • Expires: ${claimedDonation.expiry_date}`,
+                        address: claimedDonation.address,
+                      },
+                    ]}
+                    center={[claimedDonation.latitude, claimedDonation.longitude]}
+                    zoom={15}
+                    height="380px"
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Pickup address: {claimedDonation.address || "Location not available"}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           <Card className="shadow-card">
             <CardHeader>
               <CardTitle>Available Donations</CardTitle>
@@ -161,7 +203,7 @@ const RecipientDashboard = () => {
                       <Button
                         variant="default"
                         className="bg-green-600 hover:bg-green-700 text-white"
-                        onClick={() => handleClaim(food.id)}
+                        onClick={() => handleClaim(food)}
                       >
                         Claim
                       </Button>
@@ -195,11 +237,13 @@ const RecipientDashboard = () => {
                 <CardTitle>Recent Activity</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 text-sm text-muted-foreground">
-                {myClaims.length === 0 ? (
+                {recentClaims.length === 0 ? (
                   <p>No recent claims yet.</p>
                 ) : (
-                  myClaims.map((claim) => (
-                    <p key={claim.id}>✅ You claimed {claim.item_details?.name || 'Item'}</p>
+                  recentClaims.map((claim) => (
+                    <p key={claim.id}>
+                      ✅ Claimed item: {claim.item_details?.name || claim.item_name || claim.item || "Item"}
+                    </p>
                   ))
                 )}
               </CardContent>

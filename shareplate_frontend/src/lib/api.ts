@@ -204,7 +204,7 @@ export const api = {
     const response = await fetch(`${API_BASE_URL}/requests/`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ item_id: itemId }),
+      body: JSON.stringify({ item: itemId }),
     });
 
     if (!response.ok) {

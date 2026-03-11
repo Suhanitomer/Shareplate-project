@@ -22,11 +22,15 @@ class ItemSerializer(serializers.ModelSerializer):
         fields = ('id', 'name', 'description', 'address', 'quantity', 'expiry_date', 'is_available', 'created_at', 'donor', 'donor_name', 'latitude', 'longitude')
         read_only_fields = ('donor', 'created_at', 'latitude', 'longitude')
 
+from rest_framework import serializers
+from .models import Request, Item
+
 class RequestSerializer(serializers.ModelSerializer):
-    item_name = serializers.ReadOnlyField(source='item.name')
-    requester_email = serializers.ReadOnlyField(source='requester.email')
+    item = serializers.PrimaryKeyRelatedField(
+        queryset=Item.objects.filter(is_available=True)
+    )
 
     class Meta:
         model = Request
-        fields = ('id', 'item', 'item_name', 'requester', 'requester_email', 'status', 'created_at')
-        read_only_fields = ('requester', 'status', 'created_at')
+        fields = ['id', 'item', 'status', 'created_at']
+        read_only_fields = ['status', 'created_at']

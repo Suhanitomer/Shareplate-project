@@ -18,10 +18,11 @@ class ItemListCreateView(generics.ListCreateAPIView):
     """
     API view to retrieve a list of items or create a new item.
     - GET: Returns a list of available items. Can be filtered by a bounding box
-      using the `in_bbox` query parameter (e.g., ?in_bbox=xmin,ymin,xmax,ymax).
+    using the `in_bbox` query parameter (e.g., ?in_bbox=xmin,ymin,xmax,ymax).
     - POST: Creates a new item, automatically assigning the logged-in user as the donor.
     """
-    queryset = Item.objects.filter(is_available=True)
+    def get_queryset(self):
+        return Item.objects.filter(is_available=True)
     serializer_class = ItemSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
@@ -134,14 +135,18 @@ class RequestListCreateView(generics.ListCreateAPIView):
         return Request.objects.filter(requester=self.request.user)
 
     def perform_create(self, serializer):
-        # Check if item is available
-        item = serializer.validated_data['item']
-        if not item.is_available:
-            raise serializers.ValidationError("This item is no longer available.")
-        
-        # Create request
-        serializer.save(requester=self.request.user)
-        
-        # Update item status to unavailable (claimed)
-        item.is_available = False
-        item.save()
+        with transaction.atomic():
+            item = serializer.validated_data['item']
+
+            if not item.is_available:
+                raise serializers.ValidationError(
+                    "This item is no longer available."
+                )
+
+            serializer.save(
+                requester=self.request.user,
+                status="Accepted"
+            )
+
+            item.is_available = False
+            item.save()
