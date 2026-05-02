@@ -90,7 +90,9 @@ class Item(models.Model):
             except Item.DoesNotExist:
                 pass
 
-        if self.address and (not old_instance or old_instance.address != self.address):
+        should_geocode = self.latitude is None or self.longitude is None
+
+        if self.address and should_geocode and (not old_instance or old_instance.address != self.address):
             geolocator = Nominatim(user_agent="shareplate_backend")
             try:
                 location_data = geolocator.geocode(self.address, timeout=10)
@@ -160,9 +162,50 @@ class Request(models.Model):
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True, null=True, blank=True)
+    assigned_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    recipient_latitude = models.FloatField(null=True, blank=True)
+    recipient_longitude = models.FloatField(null=True, blank=True)
 
     def __str__(self):
         return f"Request for {self.item.name} by {self.requester.email}"
+
+
+class Delivery(models.Model):
+
+    STATUS_CHOICES = [
+        ('pending', 'Pending Assignment'),
+        ('assigned', 'Assigned'),
+        ('picked', 'Picked Up'),
+        ('delivering', 'On the Way'),
+        ('delivered', 'Delivered'),
+    ]
+
+    request = models.OneToOneField(
+        Request,
+        on_delete=models.CASCADE,
+        related_name='delivery_record'
+    )
+    volunteer = models.ForeignKey(
+        UserProfile,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='delivery_assignments'
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    tracking_note = models.CharField(max_length=255, blank=True, default='')
+    current_latitude = models.FloatField(null=True, blank=True)
+    current_longitude = models.FloatField(null=True, blank=True)
+    assigned_at = models.DateTimeField(null=True, blank=True)
+    picked_at = models.DateTimeField(null=True, blank=True)
+    on_the_way_at = models.DateTimeField(null=True, blank=True)
+    delivered_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Delivery #{self.pk} for request #{self.request_id}"
 
 
 # ==============================

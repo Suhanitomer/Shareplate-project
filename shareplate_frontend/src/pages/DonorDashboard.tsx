@@ -1,873 +1,379 @@
-import { useState, useEffect, useRef } from "react";
+import { FormEvent, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Activity, Clock3, LogOut, MapPin, Package2, PlusCircle, Radio, Sparkles, Trash2, Truck } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
+import { toast } from "sonner";
+
+import { api } from "@/lib/api";
+import { geocodeAddress } from "@/lib/geocoding";
+import { clearUserSession, getStoredUser } from "@/lib/session";
+import LiveBadge from "@/components/LiveBadge";
+import Map from "@/components/Map";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import Navbar from "@/components/Navbar";
-import Map from "@/components/Map";
-import {
-  UtensilsCrossed,
-  Plus,
-  Package,
-  Clock,
-  MapPin,
-  Users,
-  Edit,
-  Trash2,
-  Search,
-  Filter,
-  X,
-} from "lucide-react";
-import { toast } from "sonner";
-import { initAutocomplete, geocodeAddress } from "@/lib/geocoding";
-import { api, type DonationItem, type CreateDonationData } from "@/lib/api";
-
-// Helper function to normalize donation data from different sources
-const normalizeDonation = (donation: any) => {
-  return {
-    id: donation.id,
-    title: donation.title || donation.name || 'Untitled',
-    name: donation.name || donation.title || 'Untitled',
-    quantity: donation.quantity,
-    expiry: donation.expiry || donation.expiry_date,
-    expiry_date: donation.expiry_date || donation.expiry,
-    location: donation.location || donation.address,
-    address: donation.address || donation.location,
-    lat: donation.lat || donation.latitude,
-    lng: donation.lng || donation.longitude,
-    latitude: donation.latitude || donation.lat,
-    longitude: donation.longitude || donation.lng,
-    description: donation.description || '',
-    status: donation.status || (donation.is_available ? 'Active' : 'Inactive'),
-    is_available: donation.is_available !== undefined ? donation.is_available : true,
-    matched: donation.matched || false,
-    createdAt: donation.createdAt || donation.created_at,
-    created_at: donation.created_at || donation.createdAt,
-    donor: donation.donor || 'Unknown',
-  };
-};
+import { Badge } from "@/components/ui/badge";
 
 const DonorDashboard = () => {
-  const [showForm, setShowForm] = useState(false);
-  const [donations, setDonations] = useState<any[]>([]);
-  const [showModal, setShowModal] = useState(false);
-  const [editingDonation, setEditingDonation] = useState<any | null>(null);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState("All");
-  const [selectedDonation, setSelectedDonation] = useState<any | null>(null);
-  const [isGeocoding, setIsGeocoding] = useState(false);
-  const locationInputRef = useRef<HTMLInputElement>(null);
-  const editLocationInputRef = useRef<HTMLInputElement>(null);
-  const autocompleteCleanupRef = useRef<(() => void) | null>(null);
-  const editAutocompleteCleanupRef = useRef<(() => void) | null>(null);
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const user = getStoredUser();
+  const [form, setForm] = useState({
+    name: "",
+    description: "",
+    quantity: 1,
+    expiry_date: "",
+    address: "",
+  });
 
-  // Initialize autocomplete for location input
-  useEffect(() => {
-    if (!showForm) return;
+  const donationsQuery = useQuery({
+    queryKey: ["donations", "mine"],
+    queryFn: () => api.getDonations({ mine: true }),
+    refetchInterval: 5000,
+  });
 
-    // Small delay to ensure input is rendered
-    const timer = setTimeout(() => {
-      if (!locationInputRef.current) return;
+  const requestsQuery = useQuery({
+    queryKey: ["requests", "donor"],
+    queryFn: () => api.getRequests(),
+    refetchInterval: 4000,
+  });
 
-      const cleanup = initAutocomplete(locationInputRef.current, (place) => {
-        // Store the coordinates in a data attribute for later use
-        if (locationInputRef.current) {
-          locationInputRef.current.setAttribute('data-lat', place.lat.toString());
-          locationInputRef.current.setAttribute('data-lng', place.lng.toString());
-          locationInputRef.current.setAttribute('data-place-id', place.placeId || '');
-        }
-      });
+  const summaryQuery = useQuery({
+    queryKey: ["dashboard-summary", "donor"],
+    queryFn: api.getDashboardSummary,
+    refetchInterval: 10000,
+  });
 
-      autocompleteCleanupRef.current = cleanup;
-    }, 100);
-
-    return () => {
-      clearTimeout(timer);
-      if (autocompleteCleanupRef.current) {
-        autocompleteCleanupRef.current();
-        autocompleteCleanupRef.current = null;
-      }
-    };
-  }, [showForm]);
-
-  // Initialize autocomplete for edit modal location input
-  useEffect(() => {
-    if (!showModal) return;
-
-    // Small delay to ensure input is rendered in modal
-    const timer = setTimeout(() => {
-      if (!editLocationInputRef.current) return;
-
-      const cleanup = initAutocomplete(editLocationInputRef.current, (place) => {
-        if (editLocationInputRef.current) {
-          editLocationInputRef.current.setAttribute('data-lat', place.lat.toString());
-          editLocationInputRef.current.setAttribute('data-lng', place.lng.toString());
-          editLocationInputRef.current.setAttribute('data-place-id', place.placeId || '');
-        }
-      });
-
-      editAutocompleteCleanupRef.current = cleanup;
-    }, 100);
-
-    return () => {
-      clearTimeout(timer);
-      if (editAutocompleteCleanupRef.current) {
-        editAutocompleteCleanupRef.current();
-        editAutocompleteCleanupRef.current = null;
-      }
-    };
-  }, [showModal]);
-
-  // Load donations from backend API
-  useEffect(() => {
-    const loadDonations = async () => {
+  const createDonationMutation = useMutation({
+    mutationFn: async (payload: typeof form) => {
       try {
-        const backendDonations = await api.getDonations();
-        // Normalize donations to ensure consistent format
-        const normalized = backendDonations.map(normalizeDonation);
-        setDonations(normalized);
-      } catch (error) {
-        console.error("Failed to load donations from backend:", error);
-        // Fallback to localStorage if backend fails
-        const saved = localStorage.getItem("donations");
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved);
-            const normalized = parsed.map(normalizeDonation);
-            setDonations(normalized);
-          } catch (e) {
-            console.error("Failed to parse donations from localStorage:", e);
-          }
-        }
-      }
-    };
-    
-    loadDonations();
-  }, []);
-
-  // Save to localStorage as backup
-  useEffect(() => {
-    if (donations.length > 0) {
-      localStorage.setItem("donations", JSON.stringify(donations));
-    }
-  }, [donations]);
-
-  // Handle scrolling to map when selectedDonation changes
-  useEffect(() => {
-    if (!selectedDonation) {
-      return;
-    }
-    const normalized = normalizeDonation(selectedDonation);
-    const lat = normalized.lat || normalized.latitude;
-    const lng = normalized.lng || normalized.longitude;
-    
-    if (!lat || !lng) {
-      return;
-    }
-
-    let retryInterval: NodeJS.Timeout | null = null;
-    let animationFrameId: number | null = null;
-    let isCleanedUp = false;
-
-    // Use requestAnimationFrame to wait for the next render cycle
-    const scrollToMap = () => {
-      if (isCleanedUp) return;
-      
-      const mapElement = document.getElementById('donation-map');
-      if (mapElement) {
-        // Use requestAnimationFrame to ensure the map is fully rendered
-        animationFrameId = requestAnimationFrame(() => {
-          if (isCleanedUp) return;
-          animationFrameId = requestAnimationFrame(() => {
-            if (isCleanedUp) return;
-            mapElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          });
+        const geocoded = await geocodeAddress(payload.address);
+        return api.createDonation({
+          ...payload,
+          latitude: geocoded.lat,
+          longitude: geocoded.lng,
         });
-      } else {
-        // Retry if element doesn't exist yet (with a max retry limit)
-        let retryCount = 0;
-        const maxRetries = 10;
-        retryInterval = setInterval(() => {
-          if (isCleanedUp) {
-            if (retryInterval) clearInterval(retryInterval);
-            return;
-          }
-          
-          retryCount++;
-          const element = document.getElementById('donation-map');
-          if (element) {
-            if (retryInterval) clearInterval(retryInterval);
-            retryInterval = null;
-            animationFrameId = requestAnimationFrame(() => {
-              if (!isCleanedUp) {
-                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              }
-            });
-          } else if (retryCount >= maxRetries) {
-            if (retryInterval) clearInterval(retryInterval);
-            retryInterval = null;
-            console.warn('Map element not found after retries');
-          }
-        }, 50);
+      } catch {
+        return api.createDonation(payload);
       }
-    };
+    },
+    onSuccess: () => {
+      toast.success("Donation published to the live network.");
+      setForm({ name: "", description: "", quantity: 1, expiry_date: "", address: "" });
+      queryClient.invalidateQueries({ queryKey: ["donations"] });
+      queryClient.invalidateQueries({ queryKey: ["requests"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
 
-    // Small delay to allow React to start rendering
-    const timer = setTimeout(scrollToMap, 50);
-    
-    return () => {
-      isCleanedUp = true;
-      clearTimeout(timer);
-      if (retryInterval) {
-        clearInterval(retryInterval);
-        retryInterval = null;
-      }
-      if (animationFrameId !== null) {
-        cancelAnimationFrame(animationFrameId);
-        animationFrameId = null;
-      }
-    };
-  }, [selectedDonation?.id, selectedDonation?.lat, selectedDonation?.lng]);
+  const deleteDonationMutation = useMutation({
+    mutationFn: api.deleteDonation,
+    onSuccess: () => {
+      toast.success("Donation deleted.");
+      queryClient.invalidateQueries({ queryKey: ["donations"] });
+      queryClient.invalidateQueries({ queryKey: ["requests"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
 
-  const handleAddDonation = async (e: any) => {
-    e.preventDefault();
-    const form = e.target;
-    const locationText = form.location.value;
-    
-    if (!locationText) {
-      toast.error("Please enter a pickup location");
-      return;
-    }
+  const liveLocations = useMemo(
+    () =>
+      (donationsQuery.data || [])
+        .filter((item) => item.latitude && item.longitude)
+        .map((item) => ({
+          lat: item.latitude,
+          lng: item.longitude,
+          title: item.name,
+          description: `${item.quantity} portions`,
+          address: item.address,
+        })),
+    [donationsQuery.data]
+  );
 
-    setIsGeocoding(true);
-    
-    try {
-      let lat: number | null = null;
-      let lng: number | null = null;
-      let formattedAddress = locationText;
+  const activeRequests = useMemo(
+    () =>
+      [...(requestsQuery.data || [])].sort(
+        (left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime()
+      ),
+    [requestsQuery.data]
+  );
+  const recentDonations = useMemo(
+    () =>
+      [...(donationsQuery.data || [])]
+        .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
+        .slice(0, 2),
+    [donationsQuery.data]
+  );
+  const recentRequests = activeRequests.slice(0, 2);
+  const summary = summaryQuery.data;
 
-      // Check if coordinates are already available from autocomplete
-      const locationInput = locationInputRef.current;
-      if (locationInput) {
-        const dataLat = locationInput.getAttribute('data-lat');
-        const dataLng = locationInput.getAttribute('data-lng');
-        
-        if (dataLat && dataLng) {
-          lat = parseFloat(dataLat);
-          lng = parseFloat(dataLng);
-          formattedAddress = locationInput.value;
-        }
-      }
-
-      // If no coordinates from autocomplete, try geocoding
-      if (lat === null || lng === null) {
-        try {
-          const geocodeResult = await geocodeAddress(locationText);
-          lat = geocodeResult.lat;
-          lng = geocodeResult.lng;
-          formattedAddress = geocodeResult.formattedAddress;
-        } catch (geocodeError) {
-          console.warn("Geocoding failed, saving without coordinates:", geocodeError);
-          toast.warning("Location saved, but coordinates could not be determined. Map may not display correctly.");
-        }
-      }
-
-      // Prepare donation data for backend
-      const donationData: CreateDonationData = {
-        name: form.foodType.value,
-        description: form.description.value || '',
-        quantity: parseInt(form.quantity.value) || 1,
-        expiry_date: form.expiry.value,
-        address: formattedAddress,
-        ...(lat && lng && { latitude: lat, longitude: lng }),
-      };
-
-      // Try to create donation via backend API
-      let newDonation;
-      try {
-        const createdDonation = await api.createDonation(donationData);
-        newDonation = normalizeDonation(createdDonation);
-        setDonations([...donations, newDonation]);
-        toast.success("Donation posted successfully ✅ Volunteers have been notified!");
-      } catch (apiError) {
-        console.error("Backend API error:", apiError);
-        // Fallback to localStorage if backend fails
-        newDonation = normalizeDonation({
-          id: Date.now(),
-          name: form.foodType.value,
-          title: form.foodType.value,
-          quantity: form.quantity.value,
-          expiry_date: form.expiry.value,
-          expiry: form.expiry.value,
-          location: locationText,
-          address: formattedAddress,
-          lat: lat,
-          lng: lng,
-          latitude: lat,
-          longitude: lng,
-          description: form.description.value,
-          is_available: true,
-          status: "Active",
-          matched: false,
-          createdAt: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-          donor: 'You',
-        });
-        setDonations([...donations, newDonation]);
-        toast.success("Donation saved locally (backend unavailable)");
-      }
-
-      form.reset();
-      setShowForm(false);
-      
-      // Clear autocomplete data attributes
-      if (locationInputRef.current) {
-        locationInputRef.current.removeAttribute('data-lat');
-        locationInputRef.current.removeAttribute('data-lng');
-        locationInputRef.current.removeAttribute('data-place-id');
-      }
-
-      // Show the map with the new donation
-      setSelectedDonation(normalizeDonation(newDonation));
-      
-    } catch (error) {
-      console.error("Error adding donation:", error);
-      toast.error("Failed to post donation. Please try again.");
-    } finally {
-      setIsGeocoding(false);
-    }
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    createDonationMutation.mutate(form);
   };
 
-  const handleDelete = (id: number) => {
-    if (confirm("Are you sure you want to delete this donation?")) {
-      setDonations(donations.filter((d) => d.id !== id));
-      // Clear selected donation if it was deleted
-      if (selectedDonation && selectedDonation.id === id) {
-        setSelectedDonation(null);
-      }
-      toast.success("Donation deleted successfully 🗑️");
-    }
-  };
-
-  const handleViewMap = (donation: any) => {
-    setSelectedDonation(normalizeDonation(donation));
-    // Scrolling is now handled by the useEffect that watches selectedDonation
-    // This ensures the DOM is updated and the map is rendered before scrolling
-  };
-
-  const handleEdit = (donation: any) => {
-    setEditingDonation(normalizeDonation(donation));
-    setShowModal(true);
-  };
-
-  const handleUpdate = async (e: any) => {
-    e.preventDefault();
-    const form = e.target;
-    const locationText = form.location.value;
-    
-    setIsGeocoding(true);
-
-    try {
-      const normalizedEdit = normalizeDonation(editingDonation);
-      let lat: number | null = normalizedEdit.lat || normalizedEdit.latitude || null;
-      let lng: number | null = normalizedEdit.lng || normalizedEdit.longitude || null;
-      let formattedAddress = locationText;
-
-      // Check if coordinates are available from autocomplete
-      const locationInput = editLocationInputRef.current;
-      if (locationInput) {
-        const dataLat = locationInput.getAttribute('data-lat');
-        const dataLng = locationInput.getAttribute('data-lng');
-        
-        if (dataLat && dataLng) {
-          lat = parseFloat(dataLat);
-          lng = parseFloat(dataLng);
-          formattedAddress = locationInput.value;
-        }
-      }
-
-      // If location changed and no coordinates, try geocoding
-      if (locationText !== (normalizedEdit.location || normalizedEdit.address) && (lat === null || lng === null)) {
-        try {
-          const geocodeResult = await geocodeAddress(locationText);
-          lat = geocodeResult.lat;
-          lng = geocodeResult.lng;
-          formattedAddress = geocodeResult.formattedAddress;
-        } catch (geocodeError) {
-          console.warn("Geocoding failed:", geocodeError);
-        }
-      }
-
-      const updatedDonationData = {
-        ...editingDonation,
-        title: form.foodType.value,
-        name: form.foodType.value,
-        quantity: form.quantity.value,
-        expiry: form.expiry.value,
-        expiry_date: form.expiry.value,
-        location: locationText,
-        address: formattedAddress,
-        lat: lat,
-        lng: lng,
-        latitude: lat,
-        longitude: lng,
-        description: form.description.value,
-      };
-      
-      const updated = donations.map((d) =>
-        d.id === editingDonation.id ? normalizeDonation(updatedDonationData) : d
-      );
-      setDonations(updated);
-      setShowModal(false);
-      
-      // Clear autocomplete data attributes
-      if (editLocationInputRef.current) {
-        editLocationInputRef.current.removeAttribute('data-lat');
-        editLocationInputRef.current.removeAttribute('data-lng');
-        editLocationInputRef.current.removeAttribute('data-place-id');
-      }
-
-      // Update selected donation if it's the one being edited
-      if (selectedDonation && selectedDonation.id === editingDonation.id) {
-        const updatedDonation = updated.find(d => d.id === editingDonation.id);
-        setSelectedDonation(updatedDonation ? normalizeDonation(updatedDonation) : null);
-      }
-
-      toast.success("Donation updated successfully 🎉");
-    } catch (error) {
-      console.error("Error updating donation:", error);
-      toast.error("Failed to update donation. Please try again.");
-    } finally {
-      setIsGeocoding(false);
-    }
-  };
-
-  const filteredDonations = donations
-    .map(normalizeDonation)
-    .filter((donation) => {
-      const matchesSearch =
-        (donation.title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (donation.location || '').toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesFilter =
-        filterStatus === "All" || donation.status === filterStatus;
-      return matchesSearch && matchesFilter;
-    });
-
-  const handleLogout = () => {
-    localStorage.removeItem("userName");
-    toast.success("Logged out successfully 👋");
-    setTimeout(() => (window.location.href = "/auth"), 1000);
+  const logout = () => {
+    clearUserSession();
+    navigate("/auth?mode=login");
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <Navbar />
-      <div className="pt-24 pb-12">
-        <div className="container mx-auto px-4">
-          {/* Header */}
-          <div className="flex justify-between items-center mb-8">
-            <div>
-              <h1 className="text-4xl font-bold mb-2">Donor Dashboard</h1>
-              <p className="text-muted-foreground text-lg">
-                Manage your food donations and make an impact
-              </p>
+    <div className="min-h-screen bg-[linear-gradient(180deg,#f7fbf6_0%,#f7f2e8_100%)]">
+      <header className="sticky top-0 z-20 border-b border-white/70 bg-background/90 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
+          <Link to="/" className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl gradient-primary">
+              <Package2 className="h-6 w-6 text-primary-foreground" />
             </div>
-            <Button variant="outline" onClick={handleLogout}>
+            <div>
+              <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Donor control room</p>
+              <p className="text-lg font-semibold">SharePlate</p>
+            </div>
+          </Link>
+          <div className="flex items-center gap-3">
+            <LiveBadge />
+            <Button variant="outline" onClick={logout}>
+              <LogOut className="mr-2 h-4 w-4" />
               Logout
             </Button>
           </div>
+        </div>
+      </header>
 
-          {/* Stats */}
-          <div className="grid md:grid-cols-4 gap-6 mb-8">
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Total Donations
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-primary">
-                  {donations.length}
+      <main className="mx-auto max-w-7xl space-y-8 px-4 py-8">
+        <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+          <Card className="overflow-hidden border-none bg-[#123524] text-white shadow-[0_28px_80px_rgba(18,53,36,0.24)]">
+            <CardContent className="grid gap-10 p-8 lg:grid-cols-[1fr_auto]">
+              <div className="space-y-4">
+                <Badge className="bg-white/10 text-white hover:bg-white/10">Networked donation ops</Badge>
+                <h1 className="text-4xl font-semibold">Welcome back, {user?.first_name || "Donor"}.</h1>
+                <p className="max-w-2xl text-white/74">
+                  Publish inventory, monitor claims, and watch delivery demand move across the network as requests update in real time.
+                </p>
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="rounded-3xl border border-white/10 bg-white/6 p-4">
+                    <div className="text-sm text-white/70">Active donations</div>
+                    <div className="mt-2 text-3xl font-semibold">{Number(summary?.active_donations || 0)}</div>
+                  </div>
+                  <div className="rounded-3xl border border-white/10 bg-white/6 p-4">
+                    <div className="text-sm text-white/70">Total claims</div>
+                    <div className="mt-2 text-3xl font-semibold">{Number(summary?.total_requests || 0)}</div>
+                  </div>
+                  <div className="rounded-3xl border border-white/10 bg-white/6 p-4">
+                    <div className="text-sm text-white/70">Delivered</div>
+                    <div className="mt-2 text-3xl font-semibold">{Number(summary?.delivered_requests || 0)}</div>
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Meals Provided
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-secondary">156</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Active Listings
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-accent-foreground">
-                  {
-                    donations.filter((d) => d.status === "Active").length
-                  }
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Impact Score
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-primary">⭐ 4.8</div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Add Donation */}
-          <Card className="shadow-card mb-8">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-2xl">Post New Donation</CardTitle>
-                  <CardDescription>
-                    Share your surplus food with the community
-                  </CardDescription>
-                </div>
-                <Button
-                  variant="hero"
-                  size="sm"
-                  onClick={() => setShowForm(!showForm)}
-                >
-                  <Plus className="w-4 h-4" />
-                  New Donation
-                </Button>
               </div>
-            </CardHeader>
-
-            {showForm && (
-              <CardContent className="space-y-4 animate-slide-up">
-                <form onSubmit={handleAddDonation}>
-                  <div className="space-y-2">
-                    <Label>Food Type</Label>
-                    <Input name="foodType" required />
-                  </div>
-                  <div className="grid md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Quantity</Label>
-                      <Input name="quantity" required />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Best Before</Label>
-                      <Input type="date" name="expiry" required />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="location">
-                      <MapPin className="w-4 h-4 inline mr-1" />
-                      Pickup Location
-                    </Label>
-                    <Input 
-                      id="location"
-                      name="location" 
-                      ref={locationInputRef}
-                      placeholder="Start typing an address..."
-                      required 
-                      disabled={isGeocoding}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      💡 Start typing to search for addresses
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Description</Label>
-                    <Textarea name="description" rows={4} />
-                  </div>
-                  <div className="flex gap-3 mt-4">
-                    <Button type="submit" className="flex-1" disabled={isGeocoding}>
-                      <Package className="w-4 h-4" />
-                      {isGeocoding ? "Processing..." : "Post Donation"}
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      onClick={() => {
-                        setShowForm(false);
-                        if (locationInputRef.current) {
-                          locationInputRef.current.removeAttribute('data-lat');
-                          locationInputRef.current.removeAttribute('data-lng');
-                          locationInputRef.current.removeAttribute('data-place-id');
-                        }
-                      }}
-                      disabled={isGeocoding}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </form>
-              </CardContent>
-            )}
+              <div className="grid gap-4 self-start">
+                <div className="rounded-3xl bg-white/10 p-5">
+                  <p className="text-xs uppercase tracking-[0.22em] text-emerald-200">Live network pulse</p>
+                  <p className="mt-3 text-3xl font-semibold">{Number(summary?.network?.active_deliveries || 0)}</p>
+                  <p className="mt-1 text-sm text-white/70">Active deliveries currently moving.</p>
+                </div>
+                <div className="rounded-3xl bg-white/10 p-5">
+                  <p className="text-xs uppercase tracking-[0.22em] text-emerald-200">Response trend</p>
+                  <p className="mt-3 flex items-center gap-2 text-2xl font-semibold">
+                    <Radio className="h-5 w-5 text-emerald-300" />
+                    Live every 6s
+                  </p>
+                </div>
+              </div>
+            </CardContent>
           </Card>
 
-          {/* Search & Filter */}
-          <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
-            <div className="relative w-full md:w-1/2">
-              <Search className="absolute left-3 top-3 text-muted-foreground w-4 h-4" />
-              <Input
-                placeholder="Search donations..."
-                className="pl-9"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-muted-foreground" />
-              <select
-                className="border rounded-md p-2"
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-              >
-                <option>All</option>
-                <option>Active</option>
-                <option>Matched</option>
-                <option>Pending</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Map Display */}
-          {(() => {
-            if (!selectedDonation) return null;
-            const donation = normalizeDonation(selectedDonation);
-            const lat = donation.lat || donation.latitude;
-            const lng = donation.lng || donation.longitude;
-            
-            if (!lat || !lng) return null;
-            
-            return (
-              <Card className="shadow-card mb-8" id="donation-map">
-                <CardHeader>
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <CardTitle className="text-2xl flex items-center gap-2">
-                        <MapPin className="w-6 h-6 text-primary" />
-                        Pickup Location
-                      </CardTitle>
-                      <CardDescription>
-                        {donation.title} - {donation.address || donation.location}
-                      </CardDescription>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setSelectedDonation(null)}
-                    >
-                      <X className="w-5 h-5" />
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <Map
-                    locations={[{
-                      lat: lat,
-                      lng: lng,
-                      name: donation.title,
-                      title: donation.title,
-                      description: `${donation.quantity} • Exp: ${donation.expiry}`,
-                      address: donation.address || donation.location,
-                    }]}
-                    center={[lat, lng]}
-                    zoom={15}
-                    height="400px"
-                  />
-                </CardContent>
-              </Card>
-            );
-          })()}
-
-          {/* Donation List */}
-          <Card>
+          <Card className="border-white/70 bg-white/88">
             <CardHeader>
-              <CardTitle>Your Donations</CardTitle>
-              <CardDescription>
-                Track, edit or remove your donations easily
-              </CardDescription>
+              <CardTitle className="flex items-center gap-2">
+                <PlusCircle className="h-5 w-5 text-primary" />
+                Publish a donation
+              </CardTitle>
+              <CardDescription>New donations immediately appear in recipient and volunteer feeds.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Food title</Label>
+                  <Input id="name" value={form.name} onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))} required />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="quantity">Quantity</Label>
+                  <Input id="quantity" type="number" min={1} value={form.quantity} onChange={(e) => setForm((current) => ({ ...current, quantity: Number(e.target.value) }))} required />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="expiry">Expiry date</Label>
+                  <Input id="expiry" type="date" value={form.expiry_date} onChange={(e) => setForm((current) => ({ ...current, expiry_date: e.target.value }))} required />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="address">Pickup address</Label>
+                  <Input id="address" value={form.address} onChange={(e) => setForm((current) => ({ ...current, address: e.target.value }))} required />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="description">Description</Label>
+                  <Textarea id="description" value={form.description} onChange={(e) => setForm((current) => ({ ...current, description: e.target.value }))} rows={4} />
+                </div>
+                <Button type="submit" variant="hero" className="w-full" disabled={createDonationMutation.isPending}>
+                  {createDonationMutation.isPending ? "Publishing..." : "Publish live donation"}
+                </Button>
+              </form>
+
+              <div className="mt-6 rounded-3xl bg-muted/40 p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-foreground">Latest posted donations</p>
+                  <span className="text-xs text-muted-foreground">Delete available donations here</span>
+                </div>
+                <div className="space-y-3">
+                  {recentDonations.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Your newest donations will appear here.</p>
+                  ) : (
+                    recentDonations.map((item) => (
+                      <div key={item.id} className="flex items-center justify-between rounded-2xl bg-white px-4 py-3">
+                        <div>
+                          <p className="font-medium">{item.name}</p>
+                          <p className="text-sm text-muted-foreground">{item.address}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={item.is_available ? "outline" : "secondary"}>{item.is_available ? "Available" : "Claimed"}</Badge>
+                          {item.is_available && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => deleteDonationMutation.mutate(item.id)}
+                              disabled={deleteDonationMutation.isPending}
+                            >
+                              <Trash2 className="mr-1 h-4 w-4" />
+                              Delete
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+
+        <section className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
+          <Card className="border-white/70 bg-white/90">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Activity className="h-5 w-5 text-primary" />
+                Request activity feed
+              </CardTitle>
+              <CardDescription>Claims and deliveries refresh automatically.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {filteredDonations.length === 0 ? (
-                <p className="text-muted-foreground text-center py-4">
-                  No donations found.
+              {activeRequests.length === 0 ? (
+                <p className="rounded-2xl border border-dashed border-border p-6 text-center text-muted-foreground">
+                  No request activity yet. Publish a donation to start the workflow.
                 </p>
               ) : (
-                filteredDonations.map((donation) => (
-                  <div
-                    key={donation.id}
-                    className="p-4 rounded-lg border hover:border-primary/50 transition-all"
-                  >
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-lg">
-                          {donation.title}
-                        </h3>
-                        <p className="text-sm text-muted-foreground">
-                          {donation.quantity} • {donation.location}
+                recentRequests.map((request) => (
+                  <div key={request.id} className="rounded-3xl border border-border/80 bg-background/80 p-5">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div>
+                        <p className="text-lg font-semibold">{request.item_details.name}</p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Claimed by {request.requester?.full_name || request.requester?.email || "Recipient"}
                         </p>
-                        <p className="text-sm text-muted-foreground">
-                          Exp: {donation.expiry}
-                        </p>
-                        {donation.lat && donation.lng && (
-                          <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
-                            <MapPin className="w-3 h-3" />
-                            Location verified
-                          </p>
-                        )}
                       </div>
-                      <div className="flex gap-2">
-                        {donation.lat && donation.lng && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleViewMap(donation)}
-                            className="flex items-center gap-1"
-                          >
-                            <MapPin className="w-4 h-4" />
-                            View Map
-                          </Button>
-                        )}
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={() => handleEdit(donation)}
-                        >
-                          <Edit className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          variant="destructive"
-                          size="icon"
-                          onClick={() => handleDelete(donation.id)}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
+                      <Badge variant={request.delivery_status === "delivered" ? "secondary" : "outline"}>
+                        {request.delivery_status.replace("_", " ")}
+                      </Badge>
+                    </div>
+                    <div className="mt-4 grid gap-3 text-sm text-muted-foreground sm:grid-cols-3">
+                      <div className="flex items-center gap-2">
+                        <Package2 className="h-4 w-4 text-primary" />
+                        {request.item_details.quantity} portions
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4 text-primary" />
+                        {request.item_details.address}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Clock3 className="h-4 w-4 text-primary" />
+                        {formatDistanceToNow(new Date(request.updated_at), { addSuffix: true })}
                       </div>
                     </div>
+                    {request.volunteer && (
+                      <div className="mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                        Volunteer assigned: {request.volunteer.full_name}
+                      </div>
+                    )}
                   </div>
                 ))
               )}
             </CardContent>
           </Card>
 
-          {/* Edit Modal */}
-          {showModal && (
-            <div className="fixed inset-0 bg-black/40 flex justify-center items-center z-50">
-              <div className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-lg">
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-bold">Edit Donation</h2>
-                  <Button variant="ghost" onClick={() => setShowModal(false)}>
-                    <X className="w-5 h-5" />
-                  </Button>
-                </div>
-                <form onSubmit={handleUpdate} className="space-y-4">
-                  {(() => {
-                    const normalized = editingDonation ? normalizeDonation(editingDonation) : null;
-                    if (!normalized) return null;
-                    
-                    return (
-                      <>
-                        <div className="space-y-2">
-                          <Label>Food Type</Label>
-                          <Input
-                            name="foodType"
-                            defaultValue={normalized.title || normalized.name}
-                            required
-                          />
-                        </div>
-                        <div className="grid md:grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label>Quantity</Label>
-                            <Input
-                              name="quantity"
-                              defaultValue={normalized.quantity}
-                              required
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label>Best Before</Label>
-                            <Input
-                              type="date"
-                              name="expiry"
-                              defaultValue={normalized.expiry || normalized.expiry_date}
-                              required
-                            />
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="edit-location">
-                            <MapPin className="w-4 h-4 inline mr-1" />
-                            Pickup Location
-                          </Label>
-                          <Input
-                            id="edit-location"
-                            name="location"
-                            ref={editLocationInputRef}
-                            defaultValue={normalized.location || normalized.address}
-                            placeholder="Start typing an address..."
-                            required
-                            disabled={isGeocoding}
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            💡 Start typing to search for addresses
-                          </p>
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Description</Label>
-                          <Textarea
-                            name="description"
-                            defaultValue={normalized.description}
-                            rows={4}
-                          />
-                        </div>
-                      </>
-                    );
-                  })()}
-                  <div className="flex justify-end gap-3">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() => {
-                        setShowModal(false);
-                        if (editLocationInputRef.current) {
-                          editLocationInputRef.current.removeAttribute('data-lat');
-                          editLocationInputRef.current.removeAttribute('data-lng');
-                          editLocationInputRef.current.removeAttribute('data-place-id');
-                        }
-                      }}
-                      disabled={isGeocoding}
-                    >
-                      Cancel
-                    </Button>
-                    <Button 
-                      type="submit" 
-                      className="bg-green-600 text-white"
-                      disabled={isGeocoding}
-                    >
-                      {isGeocoding ? "Updating..." : "Update Donation"}
-                    </Button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+          <div className="space-y-6">
+            <Card className="border-white/70 bg-white/90">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Truck className="h-5 w-5 text-primary" />
+                  Pickup map
+                </CardTitle>
+                <CardDescription>All active donation pins from your account.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {liveLocations.length > 0 ? (
+                  <Map locations={liveLocations} height="340px" />
+                ) : (
+                  <p className="rounded-2xl border border-dashed border-border p-8 text-center text-muted-foreground">
+                    Publish a donation with an address to populate the live map.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="border-white/70 bg-white/90">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-primary" />
+                  Recent inventory
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {recentDonations.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No donations published yet.</p>
+                ) : (
+                  recentDonations.map((item) => (
+                    <div key={item.id} className="flex items-center justify-between rounded-2xl bg-muted/60 px-4 py-3">
+                      <div>
+                        <p className="font-medium">{item.name}</p>
+                        <p className="text-sm text-muted-foreground">{item.address}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={item.is_available ? "outline" : "secondary"}>{item.is_available ? "Available" : "Claimed"}</Badge>
+                        {item.is_available && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => deleteDonationMutation.mutate(item.id)}
+                            disabled={deleteDonationMutation.isPending}
+                          >
+                            <Trash2 className="mr-1 h-4 w-4" />
+                            Delete
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </section>
+      </main>
     </div>
   );
 };

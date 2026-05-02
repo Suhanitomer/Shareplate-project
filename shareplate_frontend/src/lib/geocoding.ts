@@ -10,6 +10,11 @@ export interface GeocodeResult {
   placeId?: string;
 }
 
+const getBackendApiUrl = () => {
+  const rawUrl = import.meta.env.VITE_BACKEND_API_URL || import.meta.env.REACT_APP_BACKEND_API_URL;
+  return rawUrl ? rawUrl.replace(/\/+$/, "") : "";
+};
+
 /**
  * Geocode an address using backend API or Nominatim (OpenStreetMap)
  * @param address - The address to geocode
@@ -17,11 +22,11 @@ export interface GeocodeResult {
  */
 export const geocodeAddress = async (address: string): Promise<GeocodeResult> => {
   // First, try backend API if configured
-  const backendApiUrl = import.meta.env.VITE_BACKEND_API_URL || import.meta.env.REACT_APP_BACKEND_API_URL;
+  const backendApiUrl = getBackendApiUrl();
   
   if (backendApiUrl) {
     try {
-      const response = await fetch(`${backendApiUrl}/api/geocode`, {
+      const response = await fetch(`${backendApiUrl}/geocode/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -91,7 +96,7 @@ export const initAutocomplete = (
   let timeoutId: NodeJS.Timeout | null = null;
   let abortController: AbortController | null = null;
 
-  const backendApiUrl = import.meta.env.VITE_BACKEND_API_URL || import.meta.env.REACT_APP_BACKEND_API_URL;
+  const backendApiUrl = getBackendApiUrl();
 
   const handleInput = async (e: Event) => {
     const target = e.target as HTMLInputElement;
@@ -113,7 +118,7 @@ export const initAutocomplete = (
         if (backendApiUrl) {
           try {
             const response = await fetch(
-              `${backendApiUrl}/api/autocomplete?q=${encodeURIComponent(query)}`,
+              `${backendApiUrl}/autocomplete/?q=${encodeURIComponent(query)}`,
               { signal: abortController.signal }
             );
             if (response.ok) {
@@ -177,4 +182,3 @@ export const initAutocomplete = (
     inputElement.removeEventListener('input', handleInput);
   };
 };
-
