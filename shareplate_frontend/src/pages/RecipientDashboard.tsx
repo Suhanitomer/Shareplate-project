@@ -65,6 +65,8 @@ const deliveryProgress: Record<DeliveryRequest["delivery_status"], number> = {
   delivered: 100,
 };
 
+const ACTIVE_DONATION_WINDOW_MS = 72 * 60 * 60 * 1000;
+
 const urgencyTone: Record<string, string> = {
   expired: "bg-rose-50 text-rose-700 border-rose-200",
   today: "bg-orange-50 text-orange-700 border-orange-200",
@@ -312,7 +314,17 @@ const RecipientDashboard = () => {
     navigate("/auth?mode=login");
   };
 
-  const availableDonations = donationsQuery.data || [];
+  const availableDonations = useMemo(
+    () =>
+      (donationsQuery.data || []).filter((donation) => {
+        const createdAtMs = new Date(donation.created_at).getTime();
+        if (!Number.isFinite(createdAtMs)) {
+          return false;
+        }
+        return Date.now() - createdAtMs <= ACTIVE_DONATION_WINDOW_MS;
+      }),
+    [donationsQuery.data]
+  );
   const myClaims = useMemo(
     () =>
       [...(requestsQuery.data || [])].sort(

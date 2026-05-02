@@ -24,7 +24,7 @@ const nextDeliveryState: Record<DeliveryRequest["delivery_status"], DeliveryRequ
   delivered: null,
 };
 
-const buildDummyDestination = (pickupLat: number, pickupLng: number) => ({
+const buildDestinationFallback = (pickupLat: number, pickupLng: number) => ({
   latitude: pickupLat + 0.015,
   longitude: pickupLng + 0.015,
 });
@@ -32,18 +32,12 @@ const buildDummyDestination = (pickupLat: number, pickupLng: number) => ({
 const getDeliveryMapData = (request: DeliveryRequest) => {
   const pickupLat = request.item_details.latitude;
   const pickupLng = request.item_details.longitude;
-  const realRecipientLat = request.recipient_location?.latitude ?? request.recipient_latitude;
-  const realRecipientLng = request.recipient_location?.longitude ?? request.recipient_longitude;
-  const dummyRecipient =
-    Number.isFinite(pickupLat) && Number.isFinite(pickupLng) ? buildDummyDestination(pickupLat as number, pickupLng as number) : null;
-  const recipientLat =
-    request.delivery_status === "delivering" && dummyRecipient
-      ? dummyRecipient.latitude
-      : realRecipientLat;
-  const recipientLng =
-    request.delivery_status === "delivering" && dummyRecipient
-      ? dummyRecipient.longitude
-      : realRecipientLng;
+  const fallbackDestination =
+    Number.isFinite(pickupLat) && Number.isFinite(pickupLng)
+      ? buildDestinationFallback(pickupLat as number, pickupLng as number)
+      : null;
+  const recipientLat = request.recipient_location?.latitude ?? request.recipient_latitude ?? fallbackDestination?.latitude;
+  const recipientLng = request.recipient_location?.longitude ?? request.recipient_longitude ?? fallbackDestination?.longitude;
   const volunteerLat = request.volunteer_location?.latitude;
   const volunteerLng = request.volunteer_location?.longitude;
 
@@ -63,12 +57,9 @@ const getDeliveryMapData = (request: DeliveryRequest) => {
       ? {
           lat: recipientLat,
           lng: recipientLng,
-          title: request.delivery_status === "delivering" ? "Delivery destination (simulated)" : "Recipient location",
-          description:
-            request.delivery_status === "delivering"
-              ? "Dummy destination for live delivery simulation"
-              : request.requester?.full_name || "Recipient destination",
-          address: "Delivery destination",
+          title: "Destination",
+          description: request.requester?.full_name || "Recipient destination",
+          address: "Destination",
         }
       : null;
 

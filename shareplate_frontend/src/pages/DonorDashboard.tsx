@@ -17,6 +17,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 
+const ACTIVE_DONATION_WINDOW_MS = 72 * 60 * 60 * 1000;
+
 const DonorDashboard = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -81,9 +83,21 @@ const DonorDashboard = () => {
     onError: (error: Error) => toast.error(error.message),
   });
 
+  const recentDonationsFeed = useMemo(
+    () =>
+      (donationsQuery.data || []).filter((item) => {
+        const createdAtMs = new Date(item.created_at).getTime();
+        if (!Number.isFinite(createdAtMs)) {
+          return false;
+        }
+        return Date.now() - createdAtMs <= ACTIVE_DONATION_WINDOW_MS;
+      }),
+    [donationsQuery.data]
+  );
+
   const liveLocations = useMemo(
     () =>
-      (donationsQuery.data || [])
+      recentDonationsFeed
         .filter((item) => item.latitude && item.longitude)
         .map((item) => ({
           lat: item.latitude,
@@ -92,7 +106,7 @@ const DonorDashboard = () => {
           description: `${item.quantity} portions`,
           address: item.address,
         })),
-    [donationsQuery.data]
+    [recentDonationsFeed]
   );
 
   const activeRequests = useMemo(
@@ -104,10 +118,10 @@ const DonorDashboard = () => {
   );
   const recentDonations = useMemo(
     () =>
-      [...(donationsQuery.data || [])]
+      [...recentDonationsFeed]
         .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
         .slice(0, 2),
-    [donationsQuery.data]
+    [recentDonationsFeed]
   );
   const recentRequests = activeRequests.slice(0, 2);
   const summary = summaryQuery.data;
