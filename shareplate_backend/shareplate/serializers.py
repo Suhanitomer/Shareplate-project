@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.utils import timezone
 
 from .models import Delivery, Item, Request, UserProfile, VolunteerLocation
 
@@ -61,14 +62,12 @@ class ItemSerializer(serializers.ModelSerializer):
             'latitude',
             'longitude',
         )
-        read_only_fields = ('donor', 'created_at')
+        read_only_fields = ('donor', 'created_at', 'is_available', 'expiry_status', 'donor_name', 'timestamp')
 
     def get_donor_name(self, obj):
         return obj.donor.get_full_name() or obj.donor.email if obj.donor else "Unknown"
 
     def get_expiry_status(self, obj):
-        from django.utils import timezone
-
         days_left = (obj.expiry_date - timezone.localdate()).days
         if days_left < 0:
             return 'expired'
@@ -179,6 +178,14 @@ class RequestSerializer(serializers.ModelSerializer):
             'current_longitude': delivery.current_longitude,
             'updated_at': delivery.updated_at,
         }
+
+    def validate_item(self, value):
+        if not value.is_available or value.expiry_date < timezone.localdate():
+            raise serializers.ValidationError("This item is no longer available.")
+        request = self.context.get('request')
+        if request and request.user.is_authenticated and value.donor_id == request.user.id:
+            raise serializers.ValidationError("You cannot claim your own donation.")
+        return value
 
 
 class RequestStatusUpdateSerializer(serializers.ModelSerializer):

@@ -194,6 +194,14 @@ export const api = {
     });
   },
 
+  async updateDonation(itemId: number, data: CreateDonationData): Promise<DonationItem> {
+    return request(`/items/${itemId}/`, {
+      method: "PATCH",
+      headers: getHeaders(),
+      body: JSON.stringify(data),
+    });
+  },
+
   async deleteDonation(itemId: number): Promise<void> {
     const response = await fetch(`${API_BASE_URL}/items/${itemId}/`, {
       method: "DELETE",
@@ -257,6 +265,14 @@ export const api = {
         body: JSON.stringify({ item: itemId }),
       });
     }
+  },
+
+  async cancelRequest(requestId: number): Promise<void> {
+    await request(`/requests/${requestId}/`, {
+      method: "PATCH",
+      headers: getHeaders(),
+      body: JSON.stringify({ action: "cancel" }),
+    });
   },
 
   async claimVolunteerDelivery(requestId: number): Promise<DeliveryRequest> {

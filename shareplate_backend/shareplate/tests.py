@@ -122,6 +122,33 @@ class VolunteerWorkflowTests(APITestCase):
         self.assertEqual(request_obj.delivery_status, "assigned")
         self.assertIsNotNone(request_obj.volunteer_id)
 
+    def test_recipient_can_cancel_claim_before_pickup(self):
+        recipient_token = Token.objects.create(user=self.recipient)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {recipient_token.key}")
+        create_response = self.client.post(
+            reverse("request-list-create"),
+            {
+                "item": self.item.id,
+                "recipient_latitude": 28.6129,
+                "recipient_longitude": 77.2295,
+            },
+            format="json",
+        )
+
+        self.assertEqual(create_response.status_code, 201)
+        request_id = create_response.data["id"]
+
+        cancel_response = self.client.patch(
+            reverse("request-detail", kwargs={"pk": request_id}),
+            {"action": "cancel"},
+            format="json",
+        )
+
+        self.assertEqual(cancel_response.status_code, 200)
+        self.assertFalse(Request.objects.filter(pk=request_id).exists())
+        self.item.refresh_from_db()
+        self.assertTrue(self.item.is_available)
+
 
 class RoleGuardTests(APITestCase):
     def setUp(self):
@@ -165,3 +192,145 @@ class RoleGuardTests(APITestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {donor_token.key}")
         response = self.client.post(reverse("request-food"), {"item": item.id}, format="json")
         self.assertEqual(response.status_code, 201)
+
+    def test_donor_can_cancel_claimed_donation_before_pickup(self):
+        item = Item.objects.create(
+            name="Meal Pack",
+            description="Ready meals",
+            address="Noida",
+            quantity=2,
+            expiry_date=timezone.localdate() + timedelta(days=1),
+            donor=self.donor,
+            latitude=28.627,
+            longitude=77.364,
+            is_available=False,
+        )
+        request_obj = Request.objects.create(
+            item=item,
+            requester=self.recipient,
+            status="Accepted",
+            delivery_status="assigned",
+            volunteer=None,
+        )
+        donor_token = Token.objects.create(user=self.donor)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {donor_token.key}")
+
+        response = self.client.delete(reverse("item-detail", kwargs={"pk": item.id}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Item.objects.filter(pk=item.id).exists())
+        self.assertFalse(Request.objects.filter(pk=request_obj.id).exists())
+
+    def test_donor_list_hides_expired_and_claimed_donations(self):
+        live_item = Item.objects.create(
+            name="Fresh Meals",
+            description="Fresh",
+            address="Noida",
+            quantity=2,
+            expiry_date=timezone.localdate() + timedelta(days=1),
+            donor=self.donor,
+            is_available=True,
+        )
+        Item.objects.create(
+            name="Expired Meals",
+            description="Expired",
+            address="Noida",
+            quantity=2,
+            expiry_date=timezone.localdate() - timedelta(days=1),
+            donor=self.donor,
+            is_available=True,
+        )
+        Item.objects.create(
+            name="Claimed Meals",
+            description="Claimed",
+            address="Noida",
+            quantity=2,
+            expiry_date=timezone.localdate() + timedelta(days=1),
+            donor=self.donor,
+            is_available=False,
+        )
+        donor_token = Token.objects.create(user=self.donor)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {donor_token.key}")
+
+        response = self.client.get(reverse("get-food"), {"mine": 1})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["id"] for item in response.data], [live_item.id])
+
+    def test_public_list_hides_expired_and_claimed_donations_for_recipients(self):
+        visible_item = Item.objects.create(
+            name="Visible Meal",
+            description="Visible",
+            address="Noida",
+            quantity=2,
+            expiry_date=timezone.localdate() + timedelta(days=1),
+            donor=self.donor,
+            is_available=True,
+        )
+        Item.objects.create(
+            name="Hidden Expired Meal",
+            description="Expired",
+            address="Noida",
+            quantity=2,
+            expiry_date=timezone.localdate() - timedelta(days=1),
+            donor=self.donor,
+            is_available=True,
+        )
+        Item.objects.create(
+            name="Hidden Claimed Meal",
+            description="Claimed",
+            address="Noida",
+            quantity=2,
+            expiry_date=timezone.localdate() + timedelta(days=1),
+            donor=self.donor,
+            is_available=False,
+        )
+        recipient_token = Token.objects.create(user=self.recipient)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {recipient_token.key}")
+
+        response = self.client.get(reverse("get-food"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["id"] for item in response.data], [visible_item.id])
+
+    def test_donor_can_edit_live_donation(self):
+        item = Item.objects.create(
+            name="Meal Pack",
+            description="Ready meals",
+            address="Noida",
+            quantity=2,
+            expiry_date=timezone.localdate() + timedelta(days=1),
+            donor=self.donor,
+            latitude=28.627,
+            longitude=77.364,
+        )
+        donor_token = Token.objects.create(user=self.donor)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {donor_token.key}")
+
+        response = self.client.patch(
+            reverse("item-detail", kwargs={"pk": item.id}),
+            {"name": "Updated Meal Pack", "quantity": 5},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        item.refresh_from_db()
+        self.assertEqual(item.name, "Updated Meal Pack")
+        self.assertEqual(item.quantity, 5)
+
+    def test_user_cannot_claim_own_donation(self):
+        item = Item.objects.create(
+            name="Own Meal",
+            description="Ready meals",
+            address="Noida",
+            quantity=2,
+            expiry_date=timezone.localdate() + timedelta(days=1),
+            donor=self.donor,
+        )
+        donor_token = Token.objects.create(user=self.donor)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {donor_token.key}")
+
+        response = self.client.post(reverse("request-food"), {"item": item.id}, format="json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("You cannot claim your own donation.", str(response.data))

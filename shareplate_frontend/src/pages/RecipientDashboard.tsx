@@ -8,10 +8,10 @@ import {
   LogOut,
   MapPin,
   Package,
+  Pencil,
   Search,
   ShieldCheck,
-  Sparkles,
-  Star,
+  Trash2,
   Truck,
   Users,
   PlusCircle,
@@ -142,65 +142,80 @@ const resolveDonationCoordinates = async (donation: DonationItem) => {
 const DonationHeroCard = ({
   donation,
   onClaim,
+  onEdit,
+  onDelete,
+  isOwner,
   disabled,
+  isDeleting,
 }: {
   donation: DonationItem;
   onClaim: (donation: DonationItem) => void;
+  onEdit: (donation: DonationItem) => void;
+  onDelete: (donation: DonationItem) => void;
+  isOwner: boolean;
   disabled: boolean;
+  isDeleting: boolean;
 }) => (
-  <div className="overflow-hidden rounded-[2rem] bg-[linear-gradient(135deg,#ff6b35_0%,#ff8f3f_58%,#ffbe5c_100%)] p-[1px] shadow-[0_24px_70px_rgba(255,107,53,0.28)]">
-    <div className="rounded-[calc(2rem-1px)] bg-[linear-gradient(135deg,rgba(255,255,255,0.16),rgba(255,255,255,0.04))] p-6 text-white backdrop-blur">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-3">
-          <Badge className="border-white/15 bg-white/15 text-white hover:bg-white/15">Best match for you</Badge>
-          <div>
-            <h2 className="text-3xl font-semibold">{donation.name}</h2>
-            <p className="mt-2 max-w-xl text-sm text-white/82">
-              {donation.description || "A high-priority community meal ready for fast pickup and quick delivery."}
-            </p>
-          </div>
-        </div>
-        <div className="rounded-3xl bg-black/12 px-4 py-3 text-right">
-          <div className="text-xs uppercase tracking-[0.2em] text-white/70">Smart score</div>
-          <div className="mt-1 text-3xl font-semibold">{computePriorityScore(donation) + 90}</div>
+  <div className="rounded-[1.5rem] border border-orange-200 bg-[#fff7f2] p-6">
+    <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="space-y-3">
+        <Badge className="border-orange-200 bg-white text-orange-700 hover:bg-white">Recommended</Badge>
+        <div>
+          <h2 className="text-2xl font-semibold text-slate-900">{donation.name}</h2>
+          <p className="mt-2 max-w-xl text-sm text-slate-600">
+            {donation.description || "Community meal ready for quick pickup and distribution."}
+          </p>
         </div>
       </div>
+      <div className="rounded-2xl bg-white px-4 py-3 text-right">
+        <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Priority</div>
+        <div className="mt-1 text-2xl font-semibold text-slate-900">{computePriorityScore(donation)}</div>
+      </div>
+    </div>
 
-      <div className="mt-6 grid gap-3 md:grid-cols-3">
-        <div className="rounded-3xl border border-white/12 bg-white/10 px-4 py-3">
-          <div className="text-xs uppercase tracking-[0.2em] text-white/65">Ready in</div>
-          <div className="mt-2 text-lg font-semibold">12-18 min</div>
+    <div className="mt-5 grid gap-3 md:grid-cols-3">
+      <div className="rounded-2xl bg-white px-4 py-3">
+        <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Quantity</div>
+        <div className="mt-2 text-base font-semibold text-slate-900">{donation.quantity} meals</div>
+      </div>
+      <div className="rounded-2xl bg-white px-4 py-3">
+        <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Expiry</div>
+        <div className="mt-2 text-base font-semibold capitalize text-slate-900">{donation.expiry_status || "fresh"}</div>
+      </div>
+      <div className="rounded-2xl bg-white px-4 py-3">
+        <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Address</div>
+        <div className="mt-2 text-sm font-medium text-slate-900">{donation.address}</div>
+      </div>
+    </div>
+
+    <div className="mt-5 flex flex-wrap items-center justify-between gap-4">
+      <div className="space-y-1">
+        <div className="flex items-center gap-2 text-sm text-slate-600">
+          <MapPin className="h-4 w-4" />
+          {donation.address}
         </div>
-        <div className="rounded-3xl border border-white/12 bg-white/10 px-4 py-3">
-          <div className="text-xs uppercase tracking-[0.2em] text-white/65">Portions</div>
-          <div className="mt-2 text-lg font-semibold">{donation.quantity} meals</div>
-        </div>
-        <div className="rounded-3xl border border-white/12 bg-white/10 px-4 py-3">
-          <div className="text-xs uppercase tracking-[0.2em] text-white/65">Expiry</div>
-          <div className="mt-2 text-lg font-semibold">{donation.expiry_status || "fresh"}</div>
+        <div className="flex items-center gap-2 text-sm text-slate-600">
+          <ShieldCheck className="h-4 w-4" />
+          Live availability is synced before claim.
         </div>
       </div>
-
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-4">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2 text-sm text-white/86">
-            <MapPin className="h-4 w-4" />
-            {donation.address}
-          </div>
-          <div className="flex items-center gap-2 text-sm text-white/72">
-            <ShieldCheck className="h-4 w-4" />
-            Verified listing with live availability sync
-          </div>
+      {isOwner ? (
+        <div className="flex flex-wrap gap-3">
+          <Button type="button" variant="outline" className="h-11 rounded-xl px-5" onClick={() => onEdit(donation)}>
+            <Pencil className="mr-2 h-4 w-4" />
+            Edit
+          </Button>
+          <Button type="button" variant="outline" className="h-11 rounded-xl px-5" onClick={() => onDelete(donation)} disabled={isDeleting}>
+            <Trash2 className="mr-2 h-4 w-4" />
+            Delete
+          </Button>
         </div>
-        <Button
-          className="h-12 rounded-2xl bg-white px-6 text-base font-semibold text-[#f05a28] hover:bg-white/90"
-          onClick={() => onClaim(donation)}
-          disabled={disabled}
-        >
-          Claim now
+      ) : (
+        <Button className="h-11 rounded-xl px-5" onClick={() => onClaim(donation)} disabled={disabled}>
+          Claim meal
           <ArrowRight className="h-4 w-4" />
         </Button>
-      </div>
+      )}
     </div>
   </div>
 );
@@ -220,6 +235,7 @@ const RecipientDashboard = () => {
     expiry_date: "",
     address: "",
   });
+  const [editingDonation, setEditingDonation] = useState<DonationItem | null>(null);
   const [claimPickupLocation, setClaimPickupLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [geocodedPickupPoint, setGeocodedPickupPoint] = useState<{ lat: number; lng: number } | null>(null);
   const [claimedRequestPreview, setClaimedRequestPreview] = useState<DeliveryRequest | null>(null);
@@ -289,12 +305,26 @@ const RecipientDashboard = () => {
   });
 
   const createDonationMutation = useMutation({
-    mutationFn: api.createDonation,
+    mutationFn: async (payload: typeof donationForm) => {
+      try {
+        const geocoded = await geocodeAddress(payload.address);
+        const donationPayload = {
+          ...payload,
+          latitude: geocoded.lat,
+          longitude: geocoded.lng,
+        };
+        return editingDonation
+          ? api.updateDonation(editingDonation.id, donationPayload)
+          : api.createDonation(donationPayload);
+      } catch {
+        return editingDonation ? api.updateDonation(editingDonation.id, payload) : api.createDonation(payload);
+      }
+    },
     onSuccess: () => {
       setClaimedRequestPreview(null);
       setClaimedDonationPreview(null);
       setClaimPickupLocation(null);
-      toast.success("Donation posted successfully. It is now live in the rescue feed.");
+      toast.success(editingDonation ? "Donation updated successfully." : "Donation posted successfully. It is now live in the rescue feed.");
       setDonationForm({
         name: "",
         description: "",
@@ -302,8 +332,45 @@ const RecipientDashboard = () => {
         expiry_date: "",
         address: "",
       });
+      setEditingDonation(null);
       setWorkspaceMode("rescue");
       queryClient.invalidateQueries({ queryKey: ["donations"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const deleteDonationMutation = useMutation({
+    mutationFn: api.deleteDonation,
+    onSuccess: () => {
+      if (editingDonation) {
+        setEditingDonation(null);
+        setDonationForm({
+          name: "",
+          description: "",
+          quantity: 1,
+          expiry_date: "",
+          address: "",
+        });
+      }
+      toast.success("Donation deleted.");
+      queryClient.invalidateQueries({ queryKey: ["donations"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const cancelClaimMutation = useMutation({
+    mutationFn: api.cancelRequest,
+    onSuccess: () => {
+      setClaimedRequestPreview(null);
+      setClaimedDonationPreview(null);
+      setClaimPickupLocation(null);
+      setGeocodedPickupPoint(null);
+      setClaimRecipientLocation(null);
+      toast.success("Claim cancelled.");
+      queryClient.invalidateQueries({ queryKey: ["donations"] });
+      queryClient.invalidateQueries({ queryKey: ["requests"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
     },
     onError: (error: Error) => toast.error(error.message),
@@ -420,6 +487,10 @@ const RecipientDashboard = () => {
       : Number.isFinite(claimedDonationPreview?.longitude)
         ? claimedDonationPreview?.longitude
         : claimPickupLocation?.lng ?? geocodedPickupPoint?.lng;
+    const claimRecipientLat = latestClaim?.recipient_location?.latitude;
+    const claimRecipientLng = latestClaim?.recipient_location?.longitude;
+    const fallbackRecipientLat = latestClaim?.recipient_latitude;
+    const fallbackRecipientLng = latestClaim?.recipient_longitude;
 
     if (!Number.isFinite(pickupLat) || !Number.isFinite(pickupLng)) {
       if (claimRecipientLocation) {
@@ -449,19 +520,19 @@ const RecipientDashboard = () => {
     };
 
     const recipientPoint =
-      Number.isFinite(latestClaim?.recipient_location?.latitude) &&
-      Number.isFinite(latestClaim?.recipient_location?.longitude)
+      Number.isFinite(claimRecipientLat) &&
+      Number.isFinite(claimRecipientLng)
         ? {
-            lat: latestClaim?.recipient_location!.latitude!,
-            lng: latestClaim?.recipient_location!.longitude!,
+            lat: claimRecipientLat,
+            lng: claimRecipientLng,
             title: "Your location",
             description: "Recipient destination",
             address: "Delivery drop-off",
           }
-        : Number.isFinite(latestClaim?.recipient_latitude) && Number.isFinite(latestClaim?.recipient_longitude)
+        : Number.isFinite(fallbackRecipientLat) && Number.isFinite(fallbackRecipientLng)
           ? {
-              lat: latestClaim?.recipient_latitude!,
-              lng: latestClaim?.recipient_longitude!,
+              lat: fallbackRecipientLat,
+              lng: fallbackRecipientLng,
               title: "Your location",
               description: "Recipient destination",
               address: "Delivery drop-off",
@@ -471,8 +542,8 @@ const RecipientDashboard = () => {
                 lat: claimRecipientLocation.latitude,
                 lng: claimRecipientLocation.longitude,
                 title: "Your location",
-                description: "Recipient destination",
-                address: "Delivery drop-off",
+            description: "Recipient destination",
+            address: "Delivery drop-off",
               }
             : null;
 
@@ -517,6 +588,50 @@ const RecipientDashboard = () => {
     createDonationMutation.mutate(donationForm);
   };
 
+  const isOwnDonation = (donation: DonationItem) => donation.donor?.id === user?.id;
+
+  const handleEditDonation = (donation: DonationItem) => {
+    setEditingDonation(donation);
+    setDonationForm({
+      name: donation.name,
+      description: donation.description || "",
+      quantity: donation.quantity,
+      expiry_date: donation.expiry_date,
+      address: donation.address,
+    });
+    setWorkspaceMode("donate");
+  };
+
+  const handleDeleteDonation = (donation: DonationItem) => {
+    if (!window.confirm("Delete this donation?")) {
+      return;
+    }
+    deleteDonationMutation.mutate(donation.id);
+  };
+
+  const handleResetDonationForm = () => {
+    setEditingDonation(null);
+    setDonationForm({
+      name: "",
+      description: "",
+      quantity: 1,
+      expiry_date: "",
+      address: "",
+    });
+  };
+
+  const canCancelClaim = latestClaim?.delivery_status === "pending" || latestClaim?.delivery_status === "assigned";
+
+  const handleCancelClaim = () => {
+    if (!latestClaim) {
+      return;
+    }
+    if (!window.confirm("Cancel this claim?")) {
+      return;
+    }
+    cancelClaimMutation.mutate(latestClaim.id);
+  };
+
   return (
     <div className="min-h-screen bg-[#f6f8fb]">
       <header className="sticky top-0 z-30 border-b border-white/70 bg-white/92 backdrop-blur">
@@ -526,9 +641,9 @@ const RecipientDashboard = () => {
               <Package className="h-6 w-6 text-white" />
             </Link>
             <div>
-              <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Recipient app</p>
+              <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Recipient dashboard</p>
               <div className="flex items-center gap-2">
-                <p className="text-lg font-semibold">SharePlate Express</p>
+                <p className="text-lg font-semibold">SharePlate</p>
                 <LiveBadge label="Live feed" />
               </div>
             </div>
@@ -536,7 +651,7 @@ const RecipientDashboard = () => {
 
           <div className="hidden items-center gap-3 md:flex">
             <div className="rounded-2xl bg-orange-50 px-4 py-2 text-sm text-orange-700">
-              Serving {user?.first_name || "you"} with fast rescue matches
+              Active feed for {user?.first_name || "your team"}
             </div>
             <Button variant="outline" onClick={logout}>
               <LogOut className="mr-2 h-4 w-4" />
@@ -549,58 +664,53 @@ const RecipientDashboard = () => {
       <main className="mx-auto max-w-7xl space-y-8 px-4 py-6">
         <section className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
           <div className="space-y-6">
-            <div className="overflow-hidden rounded-[2rem] bg-[linear-gradient(135deg,#141c2f_0%,#1f355d_45%,#2a4d83_100%)] px-6 py-7 text-white shadow-[0_30px_80px_rgba(20,28,47,0.22)]">
+            <div className="rounded-[1.5rem] bg-[#1f355d] px-6 py-7 text-white shadow-sm">
               <div className="space-y-3">
-                <div className="space-y-3">
-                  <Badge className="border-white/10 bg-white/10 text-white hover:bg-white/10">Fast rescue mode</Badge>
-                  <div>
-                    <h1 className="text-4xl font-semibold">Good evening, {user?.first_name || "there"}.</h1>
-                    <p className="mt-2 max-w-2xl text-white/72">
-                      Discover urgent meals, claim instantly, and track the full delivery journey in a format that feels more like a modern delivery app than a normal dashboard.
-                    </p>
-                    <div className="mt-5 flex flex-wrap gap-3">
-                      <Button
-                        type="button"
-                        className="h-11 rounded-2xl bg-white px-5 text-[#1f355d] hover:bg-white/90"
-                        onClick={() => setWorkspaceMode("rescue")}
-                      >
-                        Rescue meals
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-11 rounded-2xl border-white/18 bg-white/8 px-5 text-white hover:bg-white/12 hover:text-white"
-                        onClick={() => setWorkspaceMode("donate")}
-                      >
-                        <PlusCircle className="mr-2 h-4 w-4" />
-                        Post a donation
-                      </Button>
-                    </div>
-                  </div>
+                <h1 className="text-3xl font-semibold">Hello, {user?.first_name || "there"}.</h1>
+                <p className="max-w-2xl text-white/78">
+                  Find nearby meals, claim them quickly, and follow delivery progress in one place.
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  <Button
+                    type="button"
+                    className="h-11 rounded-xl bg-white px-5 text-[#1f355d] hover:bg-white/90"
+                    onClick={() => setWorkspaceMode("rescue")}
+                  >
+                    Rescue meals
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11 rounded-xl border-white/20 bg-transparent px-5 text-white hover:bg-white/10 hover:text-white"
+                    onClick={() => setWorkspaceMode("donate")}
+                  >
+                    <PlusCircle className="mr-2 h-4 w-4" />
+                    Post a donation
+                  </Button>
                 </div>
               </div>
 
               <div className="mt-6 grid gap-4 md:grid-cols-4">
-                <div className="rounded-3xl bg-white/8 p-4">
+                <div className="rounded-2xl bg-white/8 p-4">
                   <div className="text-sm text-white/68">Claims made</div>
                   <div className="mt-2 text-3xl font-semibold">{Number(summary?.claims_made || 0)}</div>
                 </div>
-                <div className="rounded-3xl bg-white/8 p-4">
+                <div className="rounded-2xl bg-white/8 p-4">
                   <div className="text-sm text-white/68">Active claims</div>
                   <div className="mt-2 text-3xl font-semibold">{Number(summary?.active_claims || 0)}</div>
                 </div>
-                <div className="rounded-3xl bg-white/8 p-4">
+                <div className="rounded-2xl bg-white/8 p-4">
                   <div className="text-sm text-white/68">Delivered</div>
                   <div className="mt-2 text-3xl font-semibold">{Number(summary?.delivered_claims || 0)}</div>
                 </div>
-                <div className="rounded-3xl bg-white/8 p-4">
-                  <div className="text-sm text-white/68">Trust score</div>
-                  <div className="mt-2 text-3xl font-semibold">{Number(summary?.reliability_score || 0)}%</div>
+                <div className="rounded-2xl bg-white/8 p-4">
+                  <div className="text-sm text-white/68">Meals available</div>
+                  <div className="mt-2 text-3xl font-semibold">{filteredDonations.length}</div>
                 </div>
               </div>
             </div>
 
-            <div className="rounded-[2rem] bg-white p-4 shadow-[0_18px_60px_rgba(24,39,75,0.08)]">
+            <div className="rounded-[1.5rem] bg-white p-4 shadow-sm">
               <div className="mb-4 flex flex-wrap gap-3">
                 <button
                   type="button"
@@ -628,7 +738,7 @@ const RecipientDashboard = () => {
                 <Input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search meals, pickup area, or quick rescue options"
+                  placeholder="Search meals or pickup area"
                   className="h-12 rounded-2xl border-transparent bg-[#f4f6fa] pl-11 text-sm shadow-none focus-visible:ring-1"
                 />
               </div>
@@ -652,20 +762,26 @@ const RecipientDashboard = () => {
               </div>
             </div>
 
+            <Card className="rounded-[1.5rem] border-amber-200 bg-amber-50 shadow-none">
+              <CardContent className="p-5">
+                <p className="text-sm font-semibold text-amber-900">Guideline for NGOs</p>
+                <p className="mt-2 text-sm leading-6 text-amber-900/90">
+                  NGO volunteers should carry food security kits during pickup and distribution. SharePlate is only a coordination platform and the SharePlate team is not responsible for food quality.
+                </p>
+              </CardContent>
+            </Card>
+
             {workspaceMode === "donate" && (
-              <Card className="rounded-[2rem] border-none bg-white shadow-[0_18px_60px_rgba(24,39,75,0.08)]">
+              <Card className="rounded-[1.5rem] border-none bg-white shadow-sm">
                 <CardContent className="p-6">
                   <div className="mb-5 flex items-start justify-between gap-4">
                     <div>
-                      <p className="text-sm font-medium uppercase tracking-[0.18em] text-orange-600">Donation composer</p>
-                      <h2 className="mt-1 text-2xl font-semibold">Post food without leaving this screen</h2>
+                      <p className="text-sm font-medium uppercase tracking-[0.18em] text-orange-600">Post food</p>
+                      <h2 className="mt-1 text-2xl font-semibold">{editingDonation ? "Edit donation" : "Create a donation"}</h2>
                       <p className="mt-2 text-sm text-muted-foreground">
-                        Donation mode is enabled on your account. Post meals and they appear instantly in the rescue feed.
+                        {editingDonation ? "Update your posted donation details here." : "Shared here, and visible immediately in the rescue feed."}
                       </p>
                     </div>
-                    <Badge className="border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-50">
-                      Live posting
-                    </Badge>
                   </div>
 
                   <form onSubmit={handleDonationSubmit} className="grid gap-4 md:grid-cols-2">
@@ -717,7 +833,7 @@ const RecipientDashboard = () => {
                         rows={4}
                         value={donationForm.description}
                         onChange={(event) => setDonationForm((current) => ({ ...current, description: event.target.value }))}
-                        placeholder="Mention meal type, packing details, pickup timing, or anything useful."
+                        placeholder="Meal type, packing details, and pickup notes"
                       />
                     </div>
                     <div className="flex flex-wrap items-center gap-3 md:col-span-2">
@@ -726,11 +842,20 @@ const RecipientDashboard = () => {
                         className="h-11 rounded-2xl bg-[#111827] px-5 text-white hover:bg-[#1f2937]"
                         disabled={createDonationMutation.isPending}
                       >
-                        {createDonationMutation.isPending ? "Posting donation..." : "Post donation now"}
+                        {createDonationMutation.isPending
+                          ? editingDonation
+                            ? "Saving changes..."
+                            : "Posting donation..."
+                          : editingDonation
+                            ? "Save changes"
+                            : "Post donation now"}
                       </Button>
-                      <span className="text-sm text-muted-foreground">
-                        As soon as you post, it appears in the rescue feed for other users.
-                      </span>
+                      {editingDonation && (
+                        <Button type="button" variant="outline" onClick={handleResetDonationForm}>
+                          Cancel
+                        </Button>
+                      )}
+                      <span className="text-sm text-muted-foreground">The listing goes live as soon as it is posted.</span>
                     </div>
                   </form>
                 </CardContent>
@@ -738,13 +863,13 @@ const RecipientDashboard = () => {
             )}
           </div>
 
-          <Card className="rounded-[2rem] border-none bg-white shadow-[0_18px_60px_rgba(24,39,75,0.08)]">
+          <Card className="rounded-[1.5rem] border-none bg-white shadow-sm">
             <CardContent className="p-6">
               {latestClaim ? (
                 <div className="space-y-6">
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <p className="text-sm font-medium uppercase tracking-[0.18em] text-orange-600">Live delivery journey</p>
+                      <p className="text-sm font-medium uppercase tracking-[0.18em] text-orange-600">Delivery tracking</p>
                       <h2 className="mt-2 text-2xl font-semibold">{latestClaim.item_details.name}</h2>
                       <p className="mt-2 text-sm text-muted-foreground">
                         {latestClaim.item_details.address}
@@ -755,15 +880,25 @@ const RecipientDashboard = () => {
                     </Badge>
                   </div>
 
+                  {canCancelClaim && (
+                    <div className="flex justify-end">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleCancelClaim}
+                        disabled={cancelClaimMutation.isPending}
+                      >
+                        {cancelClaimMutation.isPending ? "Cancelling..." : "Cancel claim"}
+                      </Button>
+                    </div>
+                  )}
+
                   <div className="rounded-3xl border border-orange-100 bg-[#fffaf7] p-4">
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-4">
                       <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
                         <Truck className="h-4 w-4 text-orange-600" />
                         Donor to recipient map
                       </div>
-                      <Badge className="border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-50">
-                        Claim route active
-                      </Badge>
                     </div>
                     {trackingMapData ? (
                       <Map
@@ -831,34 +966,18 @@ const RecipientDashboard = () => {
                   </div>
                 </div>
               ) : (
-                <div className="flex h-full min-h-[420px] flex-col justify-between rounded-[1.75rem] bg-[linear-gradient(180deg,#fff7f3_0%,#ffffff_100%)] p-6">
+                <div className="flex h-full min-h-[420px] flex-col justify-between rounded-[1.5rem] bg-[#fff7f3] p-6">
                   <div>
-                    <p className="text-sm font-medium uppercase tracking-[0.18em] text-orange-600">No active rescue yet</p>
-                    <h2 className="mt-2 text-2xl font-semibold">Claim a meal to unlock live delivery tracking</h2>
+                    <p className="text-sm font-medium uppercase tracking-[0.18em] text-orange-600">No active claim</p>
+                    <h2 className="mt-2 text-2xl font-semibold">Claim a meal to start tracking</h2>
                     <p className="mt-3 text-sm text-muted-foreground">
-                      Once you claim a donation, this panel turns into a Swiggy-style live delivery journey with progress, milestones, and status updates.
+                      This panel shows progress, route details, and the latest delivery status after a claim is placed.
                     </p>
                   </div>
 
-                  <div className="grid gap-3">
-                    <div className="rounded-3xl bg-white p-4 shadow-soft">
-                      <div className="flex items-center gap-3">
-                        <Sparkles className="h-5 w-5 text-orange-600" />
-                        <div>
-                          <p className="font-medium">Smart ranking</p>
-                          <p className="text-sm text-muted-foreground">Meals are sorted by urgency, volume, and freshness.</p>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="rounded-3xl bg-white p-4 shadow-soft">
-                      <div className="flex items-center gap-3">
-                        <Truck className="h-5 w-5 text-orange-600" />
-                        <div>
-                          <p className="font-medium">Faster tracking</p>
-                          <p className="text-sm text-muted-foreground">Volunteer and delivery states update automatically every few seconds.</p>
-                        </div>
-                      </div>
-                    </div>
+                  <div className="rounded-2xl bg-white p-4">
+                    <p className="font-medium">Live updates</p>
+                    <p className="mt-1 text-sm text-muted-foreground">Volunteer and delivery states refresh automatically every few seconds.</p>
                   </div>
                 </div>
               )}
@@ -870,12 +989,20 @@ const RecipientDashboard = () => {
           <section className="space-y-4">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <p className="text-sm font-medium uppercase tracking-[0.18em] text-orange-600">Top recommendation</p>
-                <h2 className="text-2xl font-semibold">Fastest rescue pick for right now</h2>
+                <p className="text-sm font-medium uppercase tracking-[0.18em] text-orange-600">Recommended meal</p>
+                <h2 className="text-2xl font-semibold">Best current match</h2>
               </div>
-                    <div className="text-sm text-muted-foreground">{filteredDonations.length} meals available</div>
+                  <div className="text-sm text-muted-foreground">{filteredDonations.length} meals available</div>
                   </div>
-                  <DonationHeroCard donation={featuredDonation} onClaim={(donation) => claimMutation.mutate(donation)} disabled={claimMutation.isPending} />
+                  <DonationHeroCard
+                    donation={featuredDonation}
+                    onClaim={(donation) => claimMutation.mutate(donation)}
+                    onEdit={handleEditDonation}
+                    onDelete={handleDeleteDonation}
+                    isOwner={isOwnDonation(featuredDonation)}
+                    disabled={claimMutation.isPending}
+                    isDeleting={deleteDonationMutation.isPending}
+                  />
                 </section>
         )}
 
@@ -885,7 +1012,7 @@ const RecipientDashboard = () => {
               <div className="mb-4 flex items-center justify-between gap-4">
                 <div>
                   <p className="text-sm font-medium uppercase tracking-[0.18em] text-slate-500">Quick picks</p>
-                  <h2 className="text-2xl font-semibold">Meals that are worth claiming fast</h2>
+                  <h2 className="text-2xl font-semibold">Available meals</h2>
                 </div>
               </div>
 
@@ -903,25 +1030,20 @@ const RecipientDashboard = () => {
                 </Card>
               ) : (
                 <div className="grid gap-4 md:grid-cols-2">
-                  {feedDonations.map((donation, index) => (
+                  {feedDonations.map((donation) => (
                     <Card
                       key={donation.id}
-                      className="group overflow-hidden rounded-[1.75rem] border-none bg-white shadow-[0_16px_50px_rgba(24,39,75,0.08)] transition hover:-translate-y-1 hover:shadow-[0_24px_70px_rgba(24,39,75,0.12)]"
+                      className="group overflow-hidden rounded-[1.5rem] border bg-white shadow-sm transition hover:-translate-y-0.5"
                     >
                       <CardContent className="p-0">
-                        <div className={cn(
-                          "p-5 text-white",
-                          index % 3 === 0 && "bg-[linear-gradient(135deg,#ff7a45_0%,#ff9b54_100%)]",
-                          index % 3 === 1 && "bg-[linear-gradient(135deg,#0f766e_0%,#14b8a6_100%)]",
-                          index % 3 === 2 && "bg-[linear-gradient(135deg,#1d4ed8_0%,#3b82f6_100%)]"
-                        )}>
+                        <div className="border-b bg-[#f8fafc] p-5">
                           <div className="flex items-start justify-between gap-4">
                             <div>
-                              <p className="text-xl font-semibold">{donation.name}</p>
-                              <p className="mt-1 text-sm text-white/82">{donation.description || "Community-prepared meal ready for dispatch."}</p>
+                              <p className="text-xl font-semibold text-slate-900">{donation.name}</p>
+                              <p className="mt-1 text-sm text-slate-600">{donation.description || "Community-prepared meal ready for dispatch."}</p>
                             </div>
                             {donation.expiry_status && (
-                              <span className="rounded-full bg-white/14 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em]">
+                              <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700">
                                 {donation.expiry_status}
                               </span>
                             )}
@@ -934,10 +1056,7 @@ const RecipientDashboard = () => {
                               {donation.quantity} portions
                             </span>
                             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                              ETA 15-20 min
-                            </span>
-                            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                              Score {computePriorityScore(donation) + 90}
+                              Priority {computePriorityScore(donation)}
                             </span>
                           </div>
 
@@ -950,19 +1069,34 @@ const RecipientDashboard = () => {
                               <Clock3 className="h-4 w-4 text-primary" />
                               <span>Expires {donation.expiry_date}</span>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <Star className="h-4 w-4 text-primary" />
-                              <span>Trusted listing with live stock sync</span>
-                            </div>
                           </div>
 
-                          <Button
-                            className="h-11 w-full rounded-2xl bg-[#111827] text-white hover:bg-[#1f2937]"
-                            onClick={() => claimMutation.mutate(donation)}
-                            disabled={claimMutation.isPending}
-                          >
-                            Claim meal
-                          </Button>
+                          {isOwnDonation(donation) ? (
+                            <div className="flex gap-3">
+                              <Button type="button" variant="outline" className="h-11 flex-1 rounded-2xl" onClick={() => handleEditDonation(donation)}>
+                                <Pencil className="mr-2 h-4 w-4" />
+                                Edit
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="h-11 flex-1 rounded-2xl"
+                                onClick={() => handleDeleteDonation(donation)}
+                                disabled={deleteDonationMutation.isPending}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete
+                              </Button>
+                            </div>
+                          ) : (
+                            <Button
+                              className="h-11 w-full rounded-2xl bg-[#111827] text-white hover:bg-[#1f2937]"
+                              onClick={() => claimMutation.mutate(donation)}
+                              disabled={claimMutation.isPending}
+                            >
+                              Claim meal
+                            </Button>
+                          )}
                         </div>
                       </CardContent>
                     </Card>
@@ -973,14 +1107,13 @@ const RecipientDashboard = () => {
           </div>
 
           <div className="space-y-6">
-            <Card className="rounded-[2rem] border-none bg-white shadow-[0_18px_60px_rgba(24,39,75,0.08)]">
+              <Card className="rounded-[1.5rem] border-none bg-white shadow-sm">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <p className="text-sm font-medium uppercase tracking-[0.18em] text-orange-600">Rescue spotlight</p>
-                    <h2 className="mt-1 text-2xl font-semibold">Handpicked fast movers</h2>
+                    <p className="text-sm font-medium uppercase tracking-[0.18em] text-orange-600">More options</p>
+                    <h2 className="mt-1 text-2xl font-semibold">Other available meals</h2>
                   </div>
-                  <Sparkles className="h-5 w-5 text-orange-500" />
                 </div>
                 <div className="mt-5 space-y-4">
                   {spotlightDonations.length === 0 ? (
@@ -999,14 +1132,34 @@ const RecipientDashboard = () => {
                         </div>
                         <div className="mt-3 flex items-center justify-between gap-4 text-sm">
                           <span className="text-muted-foreground">{donation.quantity} portions</span>
-                          <button
-                            type="button"
-                            className="font-medium text-orange-600 hover:text-orange-700"
-                            onClick={() => claimMutation.mutate(donation)}
-                            disabled={claimMutation.isPending}
-                          >
-                            Claim now
-                          </button>
+                          {isOwnDonation(donation) ? (
+                            <div className="flex gap-3">
+                              <button
+                                type="button"
+                                className="font-medium text-orange-600 hover:text-orange-700"
+                                onClick={() => handleEditDonation(donation)}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                className="font-medium text-orange-600 hover:text-orange-700"
+                                onClick={() => handleDeleteDonation(donation)}
+                                disabled={deleteDonationMutation.isPending}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              className="font-medium text-orange-600 hover:text-orange-700"
+                              onClick={() => claimMutation.mutate(donation)}
+                              disabled={claimMutation.isPending}
+                            >
+                              Claim now
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))
@@ -1015,14 +1168,13 @@ const RecipientDashboard = () => {
               </CardContent>
             </Card>
 
-            <Card className="rounded-[2rem] border-none bg-white shadow-[0_18px_60px_rgba(24,39,75,0.08)]">
+              <Card className="rounded-[1.5rem] border-none bg-white shadow-sm">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <p className="text-sm font-medium uppercase tracking-[0.18em] text-slate-500">Recent activity</p>
                     <h2 className="mt-1 text-2xl font-semibold">Your claim history</h2>
                   </div>
-                  <Users className="h-5 w-5 text-slate-500" />
                 </div>
                 <div className="mt-5 space-y-4">
                   {compactClaims.length === 0 ? (

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Clock3, LogOut, MapPin, Radio, Route, Truck } from "lucide-react";
+import { CheckCircle2, Clock3, LogOut, MapPin, Route, Truck } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 
@@ -196,31 +196,32 @@ const VolunteerDashboard = () => {
     activeAssignments.find((request) => request.delivery_status === "picked") ||
     activeAssignments[0] ||
     null;
+  const currentRouteRequestId = currentRouteRequest?.id ?? null;
+  const currentRouteAddress = currentRouteRequest?.item_details.address ?? "";
+  const currentRouteLatitude = currentRouteRequest?.item_details.latitude ?? null;
+  const currentRouteLongitude = currentRouteRequest?.item_details.longitude ?? null;
 
   useEffect(() => {
     let cancelled = false;
 
     const hydrateFallbackPickupCoords = async () => {
-      if (!currentRouteRequest) {
+      if (!currentRouteRequestId) {
         setFallbackPickupCoords(null);
         return;
       }
 
-      if (
-        Number.isFinite(currentRouteRequest.item_details.latitude) &&
-        Number.isFinite(currentRouteRequest.item_details.longitude)
-      ) {
+      if (Number.isFinite(currentRouteLatitude) && Number.isFinite(currentRouteLongitude)) {
         setFallbackPickupCoords(null);
         return;
       }
 
-      if (!currentRouteRequest.item_details.address) {
+      if (!currentRouteAddress) {
         setFallbackPickupCoords(null);
         return;
       }
 
       try {
-        const result = await geocodeAddress(currentRouteRequest.item_details.address);
+        const result = await geocodeAddress(currentRouteAddress);
         if (!cancelled) {
           setFallbackPickupCoords({ lat: result.lat, lng: result.lng });
         }
@@ -235,12 +236,7 @@ const VolunteerDashboard = () => {
     return () => {
       cancelled = true;
     };
-  }, [
-    currentRouteRequest?.id,
-    currentRouteRequest?.item_details?.address,
-    currentRouteRequest?.item_details?.latitude,
-    currentRouteRequest?.item_details?.longitude,
-  ]);
+  }, [currentRouteAddress, currentRouteRequestId, currentRouteLatitude, currentRouteLongitude]);
 
   const routeRequestForMap = useMemo(() => {
     if (!currentRouteRequest || !fallbackPickupCoords) {
@@ -265,7 +261,7 @@ const VolunteerDashboard = () => {
   const summary = summaryQuery.data;
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f4faf8_0%,#eef4ff_100%)]">
+    <div className="min-h-screen bg-[#f4f7fb]">
       <header className="sticky top-0 z-20 border-b border-white/70 bg-background/90 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
           <Link to="/" className="flex items-center gap-3">
@@ -289,34 +285,30 @@ const VolunteerDashboard = () => {
 
       <main className="mx-auto max-w-7xl space-y-8 px-4 py-8">
         <section className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-          <Card className="overflow-hidden border-none bg-[linear-gradient(135deg,#0f2d47_0%,#1d496d_55%,#2f6b8f_100%)] text-white shadow-[0_28px_80px_rgba(15,45,71,0.22)]">
+          <Card className="border-none bg-[#1d496d] text-white shadow-sm">
             <CardContent className="space-y-6 p-8">
-              <Badge className="w-fit bg-white/10 text-white hover:bg-white/10">Real-time volunteer ops</Badge>
               <div className="space-y-3">
                 <h1 className="text-4xl font-semibold">Dispatch board for {user?.first_name || "Volunteer"}.</h1>
-                <p className="max-w-2xl text-white/74">
-                  Claim open deliveries, update milestones from pickup to drop-off, and stream location updates directly from the browser.
+                <p className="max-w-2xl text-white/80">
+                  Claim open deliveries, update milestones, and share live location while a run is active.
                 </p>
               </div>
               <div className="grid gap-4 sm:grid-cols-4">
-                <div className="rounded-3xl border border-white/10 bg-white/8 p-4">
+                <div className="rounded-2xl border border-white/10 bg-white/8 p-4">
                   <div className="text-sm text-white/70">Open deliveries</div>
                   <div className="mt-2 text-3xl font-semibold">{Number(summary?.open_deliveries || 0)}</div>
                 </div>
-                <div className="rounded-3xl border border-white/10 bg-white/8 p-4">
+                <div className="rounded-2xl border border-white/10 bg-white/8 p-4">
                   <div className="text-sm text-white/70">My active runs</div>
                   <div className="mt-2 text-3xl font-semibold">{Number(summary?.my_active_deliveries || 0)}</div>
                 </div>
-                <div className="rounded-3xl border border-white/10 bg-white/8 p-4">
+                <div className="rounded-2xl border border-white/10 bg-white/8 p-4">
                   <div className="text-sm text-white/70">Completed</div>
                   <div className="mt-2 text-3xl font-semibold">{Number(summary?.completed_deliveries || 0)}</div>
                 </div>
-                <div className="rounded-3xl border border-white/10 bg-white/8 p-4">
-                  <div className="text-sm text-white/70">Refresh cadence</div>
-                  <div className="mt-2 flex items-center gap-2 text-2xl font-semibold">
-                    <Radio className="h-5 w-5 text-emerald-300" />
-                    5s
-                  </div>
+                <div className="rounded-2xl border border-white/10 bg-white/8 p-4">
+                  <div className="text-sm text-white/70">Queue shown</div>
+                  <div className="mt-2 text-3xl font-semibold">{freshRequests.length}</div>
                 </div>
               </div>
             </CardContent>

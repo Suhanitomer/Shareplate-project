@@ -29,6 +29,10 @@ def _role_required(user, expected_role):
     return getattr(user, 'role', None) == expected_role
 
 
+def _live_items_queryset(queryset):
+    return queryset.filter(is_available=True, expiry_date__gte=timezone.localdate())
+
+
 def _sync_delivery_to_request(delivery):
     request_obj = delivery.request
     request_obj.volunteer = delivery.volunteer
@@ -173,8 +177,8 @@ class ItemListCreateView(generics.ListCreateAPIView):
         queryset = Item.objects.select_related('donor').order_by('-created_at')
         mine = self.request.query_params.get('mine')
         if mine == '1' and self.request.user.is_authenticated:
-            return queryset.filter(donor=self.request.user)
-        return queryset.filter(is_available=True)
+            return _live_items_queryset(queryset.filter(donor=self.request.user))
+        return _live_items_queryset(queryset)
 
     def perform_create(self, serializer):
         if not self.request.user.is_authenticated:
@@ -186,19 +190,40 @@ class ItemListCreateView(generics.ListCreateAPIView):
             logger.error("Failed to send notification to volunteers: %s", exc, exc_info=True)
 
 
-class ItemDetailView(generics.RetrieveDestroyAPIView):
+class ItemDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = ItemSerializer
     permission_classes = [permissions.IsAuthenticated]
     queryset = Item.objects.select_related('donor')
 
+    def update(self, request, *args, **kwargs):
+        item = self.get_object()
+        if item.donor_id != request.user.id:
+            return Response({'error': 'Only the donor can edit this donation.'}, status=status.HTTP_403_FORBIDDEN)
+        if not item.is_available:
+            return Response({'error': 'Claimed donations cannot be edited.'}, status=status.HTTP_409_CONFLICT)
+        if item.expiry_date < timezone.localdate():
+            return Response({'error': 'Expired donations cannot be edited.'}, status=status.HTTP_409_CONFLICT)
+
+        partial = kwargs.pop('partial', False)
+        serializer = self.get_serializer(item, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
     def destroy(self, request, *args, **kwargs):
         item = self.get_object()
         if item.donor_id != request.user.id:
-            return Response({'error': 'Only the donor can delete this donation.'}, status=status.HTTP_403_FORBIDDEN)
-        if not item.is_available:
-            return Response({'error': 'Claimed donations cannot be deleted.'}, status=status.HTTP_409_CONFLICT)
+            return Response({'error': 'Only the donor can cancel this donation.'}, status=status.HTTP_403_FORBIDDEN)
+
+        active_request = item.requests.exclude(delivery_status='delivered').first()
+        if active_request and active_request.volunteer_id and active_request.delivery_status in {'picked', 'delivering'}:
+            return Response(
+                {'error': 'This donation is already in transit and can no longer be cancelled.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
         item.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response({'message': 'Donation cancelled successfully.'}, status=status.HTTP_200_OK)
 
 
 class UserRegistrationView(APIView):
@@ -307,7 +332,7 @@ class RequestListCreateView(generics.ListCreateAPIView):
             raise serializers.ValidationError("Authentication required.")
         with transaction.atomic():
             item = serializer.validated_data['item']
-            if not item.is_available:
+            if not item.is_available or item.expiry_date < timezone.localdate():
                 raise serializers.ValidationError("This item is no longer available.")
 
             created_request = serializer.save(
@@ -342,6 +367,23 @@ class RequestDetailView(generics.RetrieveUpdateAPIView):
         user = request.user
         role = getattr(user, 'role', None)
         action = request.data.get('action')
+
+        if action == 'cancel':
+            if delivery_request.requester_id != user.id:
+                return Response({'error': 'Only the user who claimed this donation can cancel the claim.'}, status=status.HTTP_403_FORBIDDEN)
+            if delivery_request.delivery_status in {'picked', 'delivering', 'delivered'}:
+                return Response(
+                    {'error': 'This claim can no longer be cancelled because delivery is already in progress.'},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            with transaction.atomic():
+                item = delivery_request.item
+                item.is_available = True
+                item.save(update_fields=['is_available'])
+                delivery_request.delete()
+
+            return Response({'message': 'Claim cancelled successfully.'}, status=status.HTTP_200_OK)
 
         if role == 'volunteer' and action == 'claim':
             if delivery_request.volunteer and delivery_request.volunteer != user:
@@ -403,8 +445,11 @@ class DashboardSummaryView(APIView):
             requests = Request.objects.filter(item__donor=user)
             data = {
                 'role': role,
-                'active_donations': items.filter(is_available=True).count(),
-                'fulfilled_donations': items.filter(is_available=False).count(),
+                'active_donations': _live_items_queryset(items).count(),
+                'fulfilled_donations': items.exclude(
+                    is_available=True,
+                    expiry_date__gte=timezone.localdate(),
+                ).count(),
                 'total_requests': requests.count(),
                 'delivered_requests': requests.filter(delivery_status='delivered').count(),
             }
