@@ -10,18 +10,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-type UserRole = "donor" | "recipient" | "volunteer" | null;
+type UserRole = "donor" | "recipient" | null;
 
 const roleRouteMap: Record<Exclude<UserRole, null>, string> = {
   donor: "/donor",
   recipient: "/recipient",
-  volunteer: "/volunteer",
 };
 
 const Auth = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [isSignUp, setIsSignUp] = useState(searchParams.get("mode") === "signup");
-  const [selectedRole, setSelectedRole] = useState<UserRole>("donor");
+  const [selectedRole, setSelectedRole] = useState<UserRole>(
+    (searchParams.get("role") as UserRole) || "donor"
+  );
   const [password, setPassword] = useState("");
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
@@ -31,13 +32,16 @@ const Auth = () => {
 
   useEffect(() => {
     setIsSignUp(searchParams.get("mode") === "signup");
+    const role = searchParams.get("role") as UserRole;
+    if (role === "donor" || role === "recipient") {
+      setSelectedRole(role);
+    }
   }, [searchParams]);
 
   const roles = useMemo(
     () => [
       { id: "donor" as const, label: "Donor", icon: UtensilsCrossed, hint: "Publish surplus food in minutes." },
       { id: "recipient" as const, label: "Recipient", icon: Users, hint: "Claim urgent meals near you." },
-      { id: "volunteer" as const, label: "Volunteer", icon: Truck, hint: "Take live delivery assignments." },
     ],
     []
   );
@@ -109,12 +113,12 @@ const Auth = () => {
                 Coordinate food rescue with live claims, delivery ops, and role-based workspaces.
               </h1>
               <p className="max-w-lg text-lg text-white/74">
-                Donors publish inventory, recipients claim nearby meals, and volunteers run live dispatch from one shared network.
+                Donors publish inventory and recipients claim nearby meals from one shared network.
               </p>
             </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2">
             {roles.map((role) => (
               <div key={role.id} className="rounded-3xl border border-white/10 bg-white/8 p-4 backdrop-blur">
                 <role.icon className="mb-4 h-6 w-6 text-emerald-300" />
@@ -136,7 +140,7 @@ const Auth = () => {
               </Link>
               <CardTitle className="text-3xl">{isSignUp ? "Create your role workspace" : "Continue to your dashboard"}</CardTitle>
               <CardDescription>
-                {isSignUp ? "Start as a donor, recipient, or volunteer." : "Log in to view live activity and respond in real time."}
+                {isSignUp ? "Start as a donor or recipient." : "Log in to view live activity and respond in real time."}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -144,7 +148,7 @@ const Auth = () => {
                 <form onSubmit={handleSignup} className="space-y-5">
                   <div className="space-y-3">
                     <Label>Select your role</Label>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-2 gap-3">
                       {roles.map((role) => (
                         <button
                           key={role.id}
@@ -202,7 +206,7 @@ const Auth = () => {
               )}
 
               <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 text-sm text-emerald-900">
-                Live features included: auto-refreshing dashboards, delivery assignment workflow, network activity metrics, and volunteer location updates.
+                Live features included: auto-refreshing dashboards, delivery tracking, and network activity metrics.
               </div>
 
               <div className="text-center text-sm">

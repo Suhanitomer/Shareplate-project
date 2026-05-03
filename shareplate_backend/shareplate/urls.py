@@ -1,6 +1,5 @@
 from django.urls import path
 from .views import (
-    AssignVolunteerView,
     DashboardSummaryView,
     GeocodeView,
     ItemDetailView,
@@ -12,7 +11,6 @@ from .views import (
     RequestDetailView,
     RequestListCreateView,
     UpdateDeliveryStatusView,
-    VolunteerLocationView,
 )
 
 urlpatterns = [
@@ -35,8 +33,6 @@ urlpatterns = [
     path('requests/', RequestListCreateView.as_view(), name='request-list-create'),
     path('request_food/', RequestListCreateView.as_view(), name='request-food'),
     path('requests/<int:pk>/', RequestDetailView.as_view(), name='request-detail'),
-    path('assign_volunteer/', AssignVolunteerView.as_view(), name='assign-volunteer'),
     path('update_delivery_status/', UpdateDeliveryStatusView.as_view(), name='update-delivery-status'),
-    path('volunteer/location/', VolunteerLocationView.as_view(), name='volunteer-location'),
     path('dashboard/summary/', DashboardSummaryView.as_view(), name='dashboard-summary'),
 ]

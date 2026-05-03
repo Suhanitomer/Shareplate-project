@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, Clock3, LogOut, MapPin, Package2, Pencil, PlusCircle, Trash2, Truck } from "lucide-react";
@@ -7,7 +7,7 @@ import { toast } from "sonner";
 
 import { api, type DonationItem } from "@/lib/api";
 import { geocodeAddress } from "@/lib/geocoding";
-import { clearUserSession, getStoredUser } from "@/lib/session";
+import { clearUserSession, getStoredUser, saveUserSession } from "@/lib/session";
 import LiveBadge from "@/components/LiveBadge";
 import Map from "@/components/Map";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,27 @@ const DonorDashboard = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const user = getStoredUser();
+  const [isVerified, setIsVerified] = useState(user?.is_verified ?? false);
+
+  useEffect(() => {
+    if (isVerified) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const profile = await api.getMe();
+        if (profile.is_verified) {
+          setIsVerified(true);
+          saveUserSession(profile);
+          clearInterval(interval);
+        }
+      } catch (error) {
+        console.error("Failed to poll profile:", error);
+      }
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [isVerified]);
+
   const [form, setForm] = useState({
     name: "",
     description: "",
@@ -184,7 +205,7 @@ const DonorDashboard = () => {
               <Package2 className="h-6 w-6 text-primary-foreground" />
             </div>
             <div>
-              <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Donor control room</p>
+              <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Your donations</p>
               <p className="text-lg font-semibold">SharePlate</p>
             </div>
           </Link>
@@ -199,14 +220,17 @@ const DonorDashboard = () => {
       </header>
 
       <main className="mx-auto max-w-7xl space-y-8 px-4 py-8">
+        {!isVerified && (
+          <div className="bg-amber-100 text-amber-800 px-4 py-3 rounded mb-4">
+            Your account is pending verification. You will be able to post donations once an admin approves your account.
+          </div>
+        )}
         <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
           <Card className="border-border bg-[#18392b] text-white shadow-sm">
             <CardContent className="grid gap-6 p-8 lg:grid-cols-[1fr_auto]">
               <div className="space-y-4">
                 <h1 className="text-4xl font-semibold">Welcome back, {user?.first_name || "Donor"}.</h1>
-                <p className="max-w-2xl text-white/80">
-                  Post food, follow claim activity, and cancel donations if pickup is no longer possible.
-                </p>
+                <p className="max-w-2xl text-white/80">Post food and keep track of claims in one place.</p>
                 <div className="grid gap-4 sm:grid-cols-3">
                   <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                     <div className="text-sm text-white/70">Active donations</div>
@@ -223,9 +247,8 @@ const DonorDashboard = () => {
                 </div>
               </div>
               <div className="self-start rounded-2xl bg-white/10 p-5">
-                <p className="text-sm text-white/70">Network activity</p>
+                <p className="text-sm text-white/70">Active deliveries</p>
                 <p className="mt-2 text-3xl font-semibold">{Number(summary?.network?.active_deliveries || 0)}</p>
-                <p className="mt-1 text-sm text-white/75">Deliveries currently in motion.</p>
               </div>
             </CardContent>
           </Card>
@@ -236,9 +259,7 @@ const DonorDashboard = () => {
                 <PlusCircle className="h-5 w-5 text-primary" />
                 {editingDonation ? "Edit donation" : "Publish a donation"}
               </CardTitle>
-              <CardDescription>
-                {editingDonation ? "Update the donation details below." : "New donations appear immediately in the live feed."}
-              </CardDescription>
+              <CardDescription>{editingDonation ? "Update the details below." : "Posts appear right away."}</CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-4">
@@ -263,7 +284,7 @@ const DonorDashboard = () => {
                   <Textarea id="description" value={form.description} onChange={(e) => setForm((current) => ({ ...current, description: e.target.value }))} rows={4} />
                 </div>
                 <div className="flex gap-3">
-                  <Button type="submit" variant="hero" className="flex-1" disabled={createDonationMutation.isPending}>
+                  <Button type="submit" variant="hero" className="flex-1" disabled={createDonationMutation.isPending || !isVerified}>
                     {createDonationMutation.isPending
                       ? editingDonation
                         ? "Saving..."
@@ -282,21 +303,20 @@ const DonorDashboard = () => {
 
               <div className="mt-6 rounded-2xl bg-muted/40 p-4">
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold text-foreground">Latest posted donations</p>
-                  <span className="text-xs text-muted-foreground">New posts appear here right away.</span>
+                  <p className="text-sm font-semibold text-foreground">Recent donations</p>
                 </div>
                 <div className="space-y-3">
                   {recentDonations.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Your newest donations will appear here.</p>
+                    <p className="text-sm text-muted-foreground">Your recent donations will appear here.</p>
                   ) : (
                     recentDonations.map((item) => (
                       <div key={item.id} className="flex items-center justify-between rounded-2xl bg-white px-4 py-3">
                         <div>
                           <p className="font-medium">{item.name}</p>
                           <p className="text-sm text-muted-foreground">{item.address}</p>
+                          <p className="text-sm text-muted-foreground">{item.quantity} portions</p>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Badge variant="outline">Available</Badge>
                           <Button type="button" variant="outline" size="sm" onClick={() => handleEditDonation(item)}>
                             <Pencil className="mr-1 h-4 w-4" />
                             Edit
@@ -326,9 +346,9 @@ const DonorDashboard = () => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Activity className="h-5 w-5 text-primary" />
-                Request activity feed
+                Activity
               </CardTitle>
-              <CardDescription>Claims and deliveries refresh automatically.</CardDescription>
+              <CardDescription>Claims and deliveries update automatically.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {activeRequests.length === 0 ? (
@@ -363,9 +383,9 @@ const DonorDashboard = () => {
                         {formatDistanceToNow(new Date(request.updated_at), { addSuffix: true })}
                       </div>
                     </div>
-                    {request.volunteer && (
+                    {request.delivery?.assigned_to && (
                       <div className="mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-                        Volunteer assigned: {request.volunteer.full_name}
+                        Assigned to: {request.delivery.assigned_to}
                       </div>
                     )}
                   </div>
@@ -381,7 +401,7 @@ const DonorDashboard = () => {
                   <Truck className="h-5 w-5 text-primary" />
                   Pickup map
                 </CardTitle>
-                <CardDescription>Pickup locations for your current donations.</CardDescription>
+                <CardDescription>Pickup locations for your donations.</CardDescription>
               </CardHeader>
               <CardContent>
                 {liveLocations.length > 0 ? (
@@ -407,9 +427,9 @@ const DonorDashboard = () => {
                       <div>
                         <p className="font-medium">{item.name}</p>
                         <p className="text-sm text-muted-foreground">{item.address}</p>
+                        <p className="text-sm text-muted-foreground">{item.quantity} portions</p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Badge variant="outline">Available</Badge>
                         <Button type="button" variant="outline" size="sm" onClick={() => handleEditDonation(item)}>
                           <Pencil className="mr-1 h-4 w-4" />
                           Edit

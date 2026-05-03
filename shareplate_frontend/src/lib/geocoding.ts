@@ -12,7 +12,7 @@ export interface GeocodeResult {
 
 const getBackendApiUrl = () => {
   const rawUrl = import.meta.env.VITE_BACKEND_API_URL || import.meta.env.REACT_APP_BACKEND_API_URL;
-  return rawUrl ? rawUrl.replace(/\/+$/, "") : "";
+  return (rawUrl || "http://localhost:8000/api").replace(/\/+$/, "");
 };
 
 /**
@@ -36,7 +36,7 @@ export const geocodeAddress = async (address: string): Promise<GeocodeResult> =>
 
       if (response.ok) {
         const data = await response.json();
-        if (data.lat && data.lng) {
+        if (Number.isFinite(data.lat) && Number.isFinite(data.lng)) {
           return {
             lat: data.lat,
             lng: data.lng,

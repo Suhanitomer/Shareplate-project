@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.utils import timezone
 
-from .models import Delivery, Item, Request, UserProfile, VolunteerLocation
+from .models import Delivery, Item, Request, UserProfile
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
@@ -16,8 +16,12 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'phone_number',
             'password',
             'email_notifications_enabled',
+            'is_verified',
         )
-        extra_kwargs = {'password': {'write_only': True}}
+        extra_kwargs = {
+            'password': {'write_only': True},
+            'is_verified': {'read_only': True}
+        }
 
     def create(self, validated_data):
         return UserProfile.objects.create_user(**validated_data)
@@ -28,7 +32,8 @@ class CompactUserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = UserProfile
-        fields = ('id', 'email', 'first_name', 'last_name', 'full_name', 'role')
+        fields = ('id', 'email', 'first_name', 'last_name', 'full_name', 'role', 'is_verified')
+        read_only_fields = ('is_verified',)
 
     def get_full_name(self, obj):
         return obj.get_full_name() or obj.email
@@ -85,8 +90,6 @@ class RequestSerializer(serializers.ModelSerializer):
     )
     item_details = ItemSerializer(source='item', read_only=True)
     requester = CompactUserSerializer(read_only=True)
-    volunteer = CompactUserSerializer(read_only=True)
-    volunteer_location = serializers.SerializerMethodField()
     recipient_location = serializers.SerializerMethodField()
     tracking_message = serializers.SerializerMethodField()
     delivery = serializers.SerializerMethodField()
@@ -100,8 +103,6 @@ class RequestSerializer(serializers.ModelSerializer):
             'requester',
             'status',
             'delivery_status',
-            'volunteer',
-            'volunteer_location',
             'recipient_location',
             'tracking_message',
             'delivery',
@@ -116,8 +117,6 @@ class RequestSerializer(serializers.ModelSerializer):
             'status',
             'delivery_status',
             'requester',
-            'volunteer',
-            'volunteer_location',
             'recipient_location',
             'tracking_message',
             'delivery',
@@ -127,23 +126,7 @@ class RequestSerializer(serializers.ModelSerializer):
             'completed_at',
         ]
 
-    def get_volunteer_location(self, obj):
-        if not obj.volunteer_id:
-            return None
 
-        try:
-            location = obj.volunteer.volunteerlocation
-        except VolunteerLocation.DoesNotExist:
-            return None
-
-        if location.latitude is None or location.longitude is None:
-            return None
-
-        return {
-            'latitude': location.latitude,
-            'longitude': location.longitude,
-            'updated_at': location.updated_at,
-        }
 
     def get_recipient_location(self, obj):
         if obj.recipient_latitude is None or obj.recipient_longitude is None:
@@ -172,7 +155,7 @@ class RequestSerializer(serializers.ModelSerializer):
             'id': delivery.id,
             'status': delivery.status,
             'tracking_note': delivery.tracking_note,
-            'volunteer_id': delivery.volunteer_id,
+            'assigned_to': delivery.assigned_to,
             'request_id': delivery.request_id,
             'current_latitude': delivery.current_latitude,
             'current_longitude': delivery.current_longitude,
@@ -200,24 +183,16 @@ class RequestStatusUpdateSerializer(serializers.ModelSerializer):
         return value
 
 
-class VolunteerLocationSerializer(serializers.ModelSerializer):
-    volunteer = CompactUserSerializer(read_only=True)
 
-    class Meta:
-        model = VolunteerLocation
-        fields = ('volunteer', 'latitude', 'longitude', 'updated_at')
-        read_only_fields = ('volunteer', 'updated_at')
 
 
 class DeliverySerializer(serializers.ModelSerializer):
-    volunteer = CompactUserSerializer(read_only=True)
-
     class Meta:
         model = Delivery
         fields = (
             'id',
             'request',
-            'volunteer',
+            'assigned_to',
             'status',
             'tracking_note',
             'current_latitude',

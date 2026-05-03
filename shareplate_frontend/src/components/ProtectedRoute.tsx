@@ -6,7 +6,7 @@ import { getStoredUser } from "@/lib/session";
 
 interface ProtectedRouteProps {
   children: ReactNode;
-  allowedRoles?: Array<"donor" | "recipient" | "volunteer">;
+  allowedRoles?: Array<"donor" | "recipient">;
 }
 
 const ProtectedRoute = ({ children, allowedRoles }: ProtectedRouteProps) => {

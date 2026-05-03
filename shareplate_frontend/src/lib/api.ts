@@ -1,6 +1,6 @@
 const API_BASE_URL = import.meta.env.VITE_BACKEND_API_URL || "http://localhost:8000/api";
 
-const getAuthToken = (): string | null => localStorage.getItem("authToken");
+const getAuthToken = (): string | null => sessionStorage.getItem("authToken");
 
 const getHeaders = (includeAuth = true): HeadersInit => {
   const headers: HeadersInit = { "Content-Type": "application/json" };
@@ -53,7 +53,7 @@ export interface User {
   email: string;
   first_name: string;
   last_name: string;
-  role: "donor" | "recipient" | "volunteer" | null;
+  role: "donor" | "recipient" | null;
   phone_number?: string;
   email_notifications_enabled?: boolean;
 }
@@ -64,7 +64,7 @@ export interface CompactUser {
   first_name: string;
   last_name: string;
   full_name: string;
-  role: "donor" | "recipient" | "volunteer" | null;
+  role: "donor" | "recipient" | null;
 }
 
 export interface DonationItem {
@@ -103,7 +103,7 @@ export interface RegisterUserData {
   password: string;
   first_name?: string;
   last_name?: string;
-  role: "donor" | "recipient" | "volunteer";
+  role: "donor" | "recipient";
   phone_number?: string;
 }
 
@@ -116,7 +116,6 @@ export interface DeliveryRequest {
     id: number;
     status: string;
     tracking_note: string;
-    volunteer_id: number | null;
     request_id: number;
     current_latitude?: number | null;
     current_longitude?: number | null;
@@ -127,8 +126,6 @@ export interface DeliveryRequest {
   assigned_at?: string | null;
   completed_at?: string | null;
   requester?: CompactUser;
-  volunteer?: CompactUser | null;
-  volunteer_location?: VolunteerLocation | null;
   recipient_location?: {
     latitude: number;
     longitude: number;
@@ -147,12 +144,6 @@ export interface DashboardSummary {
   };
   server_time: string;
   [key: string]: string | number | null | object;
-}
-
-export interface VolunteerLocation {
-  latitude?: number | null;
-  longitude?: number | null;
-  updated_at?: string;
 }
 
 export const api = {
@@ -179,7 +170,7 @@ export const api = {
     });
   },
 
-  async getUsersByRole(role: "donor" | "recipient" | "volunteer"): Promise<User[]> {
+  async getUsersByRole(role: "donor" | "recipient"): Promise<User[]> {
     return request(`/users/?role=${role}`, {
       method: "GET",
       headers: getHeaders(),
@@ -275,13 +266,7 @@ export const api = {
     });
   },
 
-  async claimVolunteerDelivery(requestId: number): Promise<DeliveryRequest> {
-    return request(`/assign_volunteer/`, {
-      method: "POST",
-      headers: getHeaders(),
-      body: JSON.stringify({ request_id: requestId }),
-    });
-  },
+
 
   async updateDeliveryStatus(requestId: number, delivery_status: DeliveryRequest["delivery_status"]): Promise<DeliveryRequest> {
     return request(`/update_delivery_status/`, {
@@ -297,22 +282,14 @@ export const api = {
       headers: getHeaders(),
     });
   },
-
-  async updateVolunteerLocation(location: VolunteerLocation): Promise<VolunteerLocation> {
-    return request("/volunteer/location/", {
-      method: "POST",
-      headers: getHeaders(),
-      body: JSON.stringify(location),
-    });
-  },
 };
 
 export const saveAuthToken = (token: string) => {
-  localStorage.setItem("authToken", token);
+  sessionStorage.setItem("authToken", token);
 };
 
 export const removeAuthToken = () => {
-  localStorage.removeItem("authToken");
+  sessionStorage.removeItem("authToken");
 };
 
 export const isAuthenticated = (): boolean => Boolean(getAuthToken());

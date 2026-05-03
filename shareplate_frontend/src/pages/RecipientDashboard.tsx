@@ -21,7 +21,7 @@ import { toast } from "sonner";
 
 import { api, type DeliveryRequest, type DonationItem } from "@/lib/api";
 import { geocodeAddress } from "@/lib/geocoding";
-import { clearUserSession, getStoredUser } from "@/lib/session";
+import { clearUserSession, getStoredUser, saveUserSession } from "@/lib/session";
 import LiveBadge from "@/components/LiveBadge";
 import Map from "@/components/Map";
 import { Badge } from "@/components/ui/badge";
@@ -33,16 +33,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
-type FilterKey = "all" | "urgent" | "fresh" | "bulk";
 type WorkspaceMode = "rescue" | "donate";
 const STALE_ACTIVE_CLAIM_WINDOW_MS = 6 * 60 * 60 * 1000;
-
-const filters: Array<{ key: FilterKey; label: string }> = [
-  { key: "all", label: "All meals" },
-  { key: "urgent", label: "Ready now" },
-  { key: "fresh", label: "Fresh picks" },
-  { key: "bulk", label: "Family packs" },
-];
 
 const deliveryStepMeta: Array<{
   key: DeliveryRequest["delivery_status"];
@@ -51,7 +43,7 @@ const deliveryStepMeta: Array<{
   icon: typeof Package;
 }> = [
   { key: "pending", label: "Claim confirmed", shortLabel: "Claimed", icon: CheckCircle2 },
-  { key: "assigned", label: "Volunteer assigned", shortLabel: "Assigned", icon: Users },
+  { key: "assigned", label: "Delivery organizing", shortLabel: "Organizing", icon: Users },
   { key: "picked", label: "Picked up", shortLabel: "Picked", icon: Package },
   { key: "delivering", label: "On the way", shortLabel: "On route", icon: Truck },
   { key: "delivered", label: "Delivered", shortLabel: "Delivered", icon: CheckCircle2 },
@@ -87,9 +79,9 @@ const computePriorityScore = (donation: DonationItem) => {
 const getEtaLabel = (request: DeliveryRequest) => {
   switch (request.delivery_status) {
     case "pending":
-      return "Waiting for volunteer";
+      return "Waiting for pickup";
     case "assigned":
-      return "Volunteer joining soon";
+      return "Pickup scheduled";
     case "picked":
       return "Pickup completed";
     case "delivering":
@@ -159,12 +151,9 @@ const DonationHeroCard = ({
   <div className="rounded-[1.5rem] border border-orange-200 bg-[#fff7f2] p-6">
     <div className="flex flex-wrap items-start justify-between gap-4">
       <div className="space-y-3">
-        <Badge className="border-orange-200 bg-white text-orange-700 hover:bg-white">Recommended</Badge>
+        <Badge className="border-orange-200 bg-white text-orange-700 hover:bg-white">Suggested</Badge>
         <div>
           <h2 className="text-2xl font-semibold text-slate-900">{donation.name}</h2>
-          <p className="mt-2 max-w-xl text-sm text-slate-600">
-            {donation.description || "Community meal ready for quick pickup and distribution."}
-          </p>
         </div>
       </div>
       <div className="rounded-2xl bg-white px-4 py-3 text-right">
@@ -196,7 +185,7 @@ const DonationHeroCard = ({
         </div>
         <div className="flex items-center gap-2 text-sm text-slate-600">
           <ShieldCheck className="h-4 w-4" />
-          Live availability is synced before claim.
+          {donation.quantity} meals available
         </div>
       </div>
       {isOwner ? (
@@ -224,8 +213,29 @@ const RecipientDashboard = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const user = getStoredUser();
+  const [isVerified, setIsVerified] = useState(user?.is_verified ?? false);
+
+  useEffect(() => {
+    if (isVerified) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const profile = await api.getMe();
+        if (profile.is_verified) {
+          setIsVerified(true);
+          saveUserSession(profile);
+          clearInterval(interval);
+        }
+      } catch (error) {
+        console.error("Failed to poll profile:", error);
+      }
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [isVerified]);
+
   const [search, setSearch] = useState("");
-  const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
+
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("rescue");
   const deferredSearch = useDeferredValue(search);
   const [donationForm, setDonationForm] = useState({
@@ -487,27 +497,7 @@ const RecipientDashboard = () => {
       : Number.isFinite(claimedDonationPreview?.longitude)
         ? claimedDonationPreview?.longitude
         : claimPickupLocation?.lng ?? geocodedPickupPoint?.lng;
-    const claimRecipientLat = latestClaim?.recipient_location?.latitude;
-    const claimRecipientLng = latestClaim?.recipient_location?.longitude;
-    const fallbackRecipientLat = latestClaim?.recipient_latitude;
-    const fallbackRecipientLng = latestClaim?.recipient_longitude;
-
     if (!Number.isFinite(pickupLat) || !Number.isFinite(pickupLng)) {
-      if (claimRecipientLocation) {
-        return {
-          locations: [
-            {
-              lat: claimRecipientLocation.latitude,
-              lng: claimRecipientLocation.longitude,
-              title: "Your location",
-              description: "Recipient destination",
-              address: "Current location",
-            },
-          ],
-          routePath: [],
-          movingMarker: null,
-        };
-      }
       return null;
     }
 
@@ -519,37 +509,9 @@ const RecipientDashboard = () => {
       address: latestClaim?.item_details?.address || claimedDonationPreview?.address || "Pickup address",
     };
 
-    const recipientPoint =
-      Number.isFinite(claimRecipientLat) &&
-      Number.isFinite(claimRecipientLng)
-        ? {
-            lat: claimRecipientLat,
-            lng: claimRecipientLng,
-            title: "Your location",
-            description: "Recipient destination",
-            address: "Delivery drop-off",
-          }
-        : Number.isFinite(fallbackRecipientLat) && Number.isFinite(fallbackRecipientLng)
-          ? {
-              lat: fallbackRecipientLat,
-              lng: fallbackRecipientLng,
-              title: "Your location",
-              description: "Recipient destination",
-              address: "Delivery drop-off",
-            }
-          : claimRecipientLocation
-            ? {
-                lat: claimRecipientLocation.latitude,
-                lng: claimRecipientLocation.longitude,
-                title: "Your location",
-            description: "Recipient destination",
-            address: "Delivery drop-off",
-              }
-            : null;
-
     return {
-      locations: recipientPoint ? [pickupPoint, recipientPoint] : [pickupPoint],
-      routePath: recipientPoint ? [pickupPoint, recipientPoint] : [pickupPoint],
+      locations: [pickupPoint],
+      routePath: [pickupPoint],
       movingMarker: null,
     };
   }, [latestClaim, geocodedPickupPoint, claimRecipientLocation, claimedDonationPreview, claimPickupLocation]);
@@ -559,19 +521,13 @@ const RecipientDashboard = () => {
 
     return availableDonations
       .filter((donation) => {
-        if (activeFilter === "urgent") return donation.expiry_status === "today" || donation.expiry_status === "urgent";
-        if (activeFilter === "fresh") return donation.expiry_status === "fresh";
-        if (activeFilter === "bulk") return donation.quantity >= 5;
-        return true;
-      })
-      .filter((donation) => {
         if (!needle) return true;
         return [donation.name, donation.description, donation.address]
           .filter(Boolean)
           .some((value) => value.toLowerCase().includes(needle));
       })
       .sort((left, right) => computePriorityScore(right) - computePriorityScore(left));
-  }, [availableDonations, activeFilter, deferredSearch]);
+  }, [availableDonations, deferredSearch]);
 
   const featuredDonation = filteredDonations[0];
   const spotlightDonations = filteredDonations.slice(1, 4);
@@ -641,17 +597,17 @@ const RecipientDashboard = () => {
               <Package className="h-6 w-6 text-white" />
             </Link>
             <div>
-              <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Recipient dashboard</p>
+              <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Find and claim food</p>
               <div className="flex items-center gap-2">
                 <p className="text-lg font-semibold">SharePlate</p>
-                <LiveBadge label="Live feed" />
+                <LiveBadge label="Available donations" />
               </div>
             </div>
           </div>
 
           <div className="hidden items-center gap-3 md:flex">
             <div className="rounded-2xl bg-orange-50 px-4 py-2 text-sm text-orange-700">
-              Active feed for {user?.first_name || "your team"}
+              Viewing available donations
             </div>
             <Button variant="outline" onClick={logout}>
               <LogOut className="mr-2 h-4 w-4" />
@@ -662,21 +618,24 @@ const RecipientDashboard = () => {
       </header>
 
       <main className="mx-auto max-w-7xl space-y-8 px-4 py-6">
+        {!isVerified && (
+          <div className="bg-amber-100 text-amber-800 px-4 py-3 rounded mb-4">
+            Your account is pending verification. You will be able to claim donations once an admin approves your account.
+          </div>
+        )}
         <section className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
           <div className="space-y-6">
             <div className="rounded-[1.5rem] bg-[#1f355d] px-6 py-7 text-white shadow-sm">
               <div className="space-y-3">
                 <h1 className="text-3xl font-semibold">Hello, {user?.first_name || "there"}.</h1>
-                <p className="max-w-2xl text-white/78">
-                  Find nearby meals, claim them quickly, and follow delivery progress in one place.
-                </p>
+                <p className="max-w-2xl text-white/78">Browse nearby meals and track your claims.</p>
                 <div className="flex flex-wrap gap-3">
                   <Button
                     type="button"
                     className="h-11 rounded-xl bg-white px-5 text-[#1f355d] hover:bg-white/90"
                     onClick={() => setWorkspaceMode("rescue")}
                   >
-                    Rescue meals
+                    Browse meals
                   </Button>
                   <Button
                     type="button"
@@ -720,7 +679,7 @@ const RecipientDashboard = () => {
                     workspaceMode === "rescue" ? "bg-[#111827] text-white" : "bg-[#f4f6fa] text-slate-700"
                   )}
                 >
-                  Rescue mode
+                  Browse
                 </button>
                 <button
                   type="button"
@@ -730,7 +689,7 @@ const RecipientDashboard = () => {
                     workspaceMode === "donate" ? "bg-[#111827] text-white" : "bg-[#f4f6fa] text-slate-700"
                   )}
                 >
-                  Donate mode
+                  Post
                 </button>
               </div>
               <div className="relative">
@@ -743,31 +702,12 @@ const RecipientDashboard = () => {
                 />
               </div>
 
-              <div className="mt-4 flex flex-wrap gap-3">
-                {filters.map((filter) => (
-                  <button
-                    key={filter.key}
-                    type="button"
-                    onClick={() => setActiveFilter(filter.key)}
-                    className={cn(
-                      "rounded-full px-4 py-2 text-sm font-medium transition",
-                      activeFilter === filter.key
-                        ? "bg-[#111827] text-white shadow-soft"
-                        : "bg-[#f4f6fa] text-slate-700 hover:bg-[#ebeef5]"
-                    )}
-                  >
-                    {filter.label}
-                  </button>
-                ))}
-              </div>
             </div>
 
             <Card className="rounded-[1.5rem] border-amber-200 bg-amber-50 shadow-none">
               <CardContent className="p-5">
-                <p className="text-sm font-semibold text-amber-900">Guideline for NGOs</p>
-                <p className="mt-2 text-sm leading-6 text-amber-900/90">
-                  NGO volunteers should carry food security kits during pickup and distribution. SharePlate is only a coordination platform and the SharePlate team is not responsible for food quality.
-                </p>
+                <p className="text-sm font-semibold text-amber-900">For NGOs</p>
+                <p className="mt-2 text-sm leading-6 text-amber-900/90">Please confirm food quality and pickup details directly before distribution.</p>
               </CardContent>
             </Card>
 
@@ -778,9 +718,7 @@ const RecipientDashboard = () => {
                     <div>
                       <p className="text-sm font-medium uppercase tracking-[0.18em] text-orange-600">Post food</p>
                       <h2 className="mt-1 text-2xl font-semibold">{editingDonation ? "Edit donation" : "Create a donation"}</h2>
-                      <p className="mt-2 text-sm text-muted-foreground">
-                        {editingDonation ? "Update your posted donation details here." : "Shared here, and visible immediately in the rescue feed."}
-                      </p>
+                      <p className="mt-2 text-sm text-muted-foreground">{editingDonation ? "Update the details below." : "This goes live right away."}</p>
                     </div>
                   </div>
 
@@ -855,7 +793,7 @@ const RecipientDashboard = () => {
                           Cancel
                         </Button>
                       )}
-                      <span className="text-sm text-muted-foreground">The listing goes live as soon as it is posted.</span>
+                      <span className="text-sm text-muted-foreground">Goes live right away.</span>
                     </div>
                   </form>
                 </CardContent>
@@ -897,7 +835,7 @@ const RecipientDashboard = () => {
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-4">
                       <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
                         <Truck className="h-4 w-4 text-orange-600" />
-                        Donor to recipient map
+                        Route map
                       </div>
                     </div>
                     {trackingMapData ? (
@@ -954,10 +892,10 @@ const RecipientDashboard = () => {
                               <span className="text-xs text-muted-foreground">{step.shortLabel}</span>
                             </div>
                             {index < deliveryStageIndex && (
-                              <p className="mt-1 text-xs text-muted-foreground">Completed in the current rescue flow.</p>
+                              <p className="mt-1 text-xs text-muted-foreground">Completed.</p>
                             )}
                             {index === deliveryStageIndex && (
-                              <p className="mt-1 text-xs text-orange-700">This is the current live stage.</p>
+                              <p className="mt-1 text-xs text-orange-700">Current step.</p>
                             )}
                           </div>
                         </div>
@@ -970,14 +908,12 @@ const RecipientDashboard = () => {
                   <div>
                     <p className="text-sm font-medium uppercase tracking-[0.18em] text-orange-600">No active claim</p>
                     <h2 className="mt-2 text-2xl font-semibold">Claim a meal to start tracking</h2>
-                    <p className="mt-3 text-sm text-muted-foreground">
-                      This panel shows progress, route details, and the latest delivery status after a claim is placed.
-                    </p>
+                    <p className="mt-3 text-sm text-muted-foreground">Track status and route updates here after you claim a meal.</p>
                   </div>
 
                   <div className="rounded-2xl bg-white p-4">
-                    <p className="font-medium">Live updates</p>
-                    <p className="mt-1 text-sm text-muted-foreground">Volunteer and delivery states refresh automatically every few seconds.</p>
+                    <p className="font-medium">Status updates</p>
+                    <p className="mt-1 text-sm text-muted-foreground">Delivery updates refresh automatically.</p>
                   </div>
                 </div>
               )}
@@ -989,8 +925,8 @@ const RecipientDashboard = () => {
           <section className="space-y-4">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <p className="text-sm font-medium uppercase tracking-[0.18em] text-orange-600">Recommended meal</p>
-                <h2 className="text-2xl font-semibold">Best current match</h2>
+                <p className="text-sm font-medium uppercase tracking-[0.18em] text-orange-600">Suggested meal</p>
+                <h2 className="text-2xl font-semibold">Available now</h2>
               </div>
                   <div className="text-sm text-muted-foreground">{filteredDonations.length} meals available</div>
                   </div>
@@ -1000,7 +936,7 @@ const RecipientDashboard = () => {
                     onEdit={handleEditDonation}
                     onDelete={handleDeleteDonation}
                     isOwner={isOwnDonation(featuredDonation)}
-                    disabled={claimMutation.isPending}
+                    disabled={claimMutation.isPending || !isVerified}
                     isDeleting={deleteDonationMutation.isPending}
                   />
                 </section>
@@ -1011,8 +947,8 @@ const RecipientDashboard = () => {
             <div>
               <div className="mb-4 flex items-center justify-between gap-4">
                 <div>
-                  <p className="text-sm font-medium uppercase tracking-[0.18em] text-slate-500">Quick picks</p>
-                  <h2 className="text-2xl font-semibold">Available meals</h2>
+                  <p className="text-sm font-medium uppercase tracking-[0.18em] text-slate-500">Available donations</p>
+                  <h2 className="text-2xl font-semibold">Meals near you</h2>
                 </div>
               </div>
 
@@ -1025,7 +961,7 @@ const RecipientDashboard = () => {
               ) : feedDonations.length === 0 ? (
                 <Card className="rounded-[2rem] border-none bg-white shadow-soft">
                   <CardContent className="p-10 text-center text-muted-foreground">
-                    No meals match this filter right now. Try another category or wait for the live feed to refresh.
+                    No meals match this filter right now. Try another category or check back soon.
                   </CardContent>
                 </Card>
               ) : (
@@ -1040,7 +976,6 @@ const RecipientDashboard = () => {
                           <div className="flex items-start justify-between gap-4">
                             <div>
                               <p className="text-xl font-semibold text-slate-900">{donation.name}</p>
-                              <p className="mt-1 text-sm text-slate-600">{donation.description || "Community-prepared meal ready for dispatch."}</p>
                             </div>
                             {donation.expiry_status && (
                               <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700">
@@ -1054,9 +989,6 @@ const RecipientDashboard = () => {
                           <div className="flex flex-wrap gap-2">
                             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
                               {donation.quantity} portions
-                            </span>
-                            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                              Priority {computePriorityScore(donation)}
                             </span>
                           </div>
 
@@ -1092,7 +1024,7 @@ const RecipientDashboard = () => {
                             <Button
                               className="h-11 w-full rounded-2xl bg-[#111827] text-white hover:bg-[#1f2937]"
                               onClick={() => claimMutation.mutate(donation)}
-                              disabled={claimMutation.isPending}
+                              disabled={claimMutation.isPending || !isVerified}
                             >
                               Claim meal
                             </Button>
@@ -1111,13 +1043,13 @@ const RecipientDashboard = () => {
               <CardContent className="p-6">
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <p className="text-sm font-medium uppercase tracking-[0.18em] text-orange-600">More options</p>
-                    <h2 className="mt-1 text-2xl font-semibold">Other available meals</h2>
+                    <p className="text-sm font-medium uppercase tracking-[0.18em] text-orange-600">More donations</p>
+                    <h2 className="mt-1 text-2xl font-semibold">More meals nearby</h2>
                   </div>
                 </div>
                 <div className="mt-5 space-y-4">
                   {spotlightDonations.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">More spotlight meals will appear as the feed refreshes.</p>
+                    <p className="text-sm text-muted-foreground">More meals will appear here as new donations are posted.</p>
                   ) : (
                     spotlightDonations.map((donation) => (
                       <div key={donation.id} className="rounded-3xl bg-[#f8fafc] p-4">
@@ -1155,7 +1087,7 @@ const RecipientDashboard = () => {
                               type="button"
                               className="font-medium text-orange-600 hover:text-orange-700"
                               onClick={() => claimMutation.mutate(donation)}
-                              disabled={claimMutation.isPending}
+                              disabled={claimMutation.isPending || !isVerified}
                             >
                               Claim now
                             </button>

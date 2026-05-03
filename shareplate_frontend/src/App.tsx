@@ -9,7 +9,6 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import DonorDashboard from "./pages/DonorDashboard";
 import RecipientDashboard from "./pages/RecipientDashboard";
-import VolunteerDashboard from "./pages/VolunteerDashboard";
 
 import HowItWorks from "./pages/HowItWorks";
 import SignupSuccess from "./pages/SignupSuccess";
@@ -55,14 +54,7 @@ const App = () => (
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/volunteer"
-            element={
-              <ProtectedRoute allowedRoles={["volunteer"]}>
-                <VolunteerDashboard />
-              </ProtectedRoute>
-            }
-          />
+
 
           <Route path="*" element={<NotFound />} />
         </Routes>

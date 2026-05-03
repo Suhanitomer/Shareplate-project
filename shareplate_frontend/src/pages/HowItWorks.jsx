@@ -18,11 +18,11 @@ const HowItWorks = () => {
     },
     {
       icon: Users,
-      title: "2. Volunteers Connect",
-      description: "Bridging the gap safely.",
+      title: "2. NGOs Organize",
+      description: "Managing logistics offline.",
       features: [
-        "Volunteers receive instant alerts",
-        "Optimized pickup routes provided",
+        "NGOs coordinate volunteer pickups",
+        "Optimized delivery schedules",
         "Strictly managed by Partner NGOs",
         "Secure and traceable transport"
       ]

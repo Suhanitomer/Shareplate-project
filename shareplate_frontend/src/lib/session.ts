@@ -3,13 +3,13 @@ import type { User } from "@/lib/api";
 const USER_KEY = "shareplate.user";
 
 export const saveUserSession = (user: User) => {
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
-  localStorage.setItem("userRole", user.role || "");
-  localStorage.setItem("userName", user.first_name || user.email || "User");
+  sessionStorage.setItem(USER_KEY, JSON.stringify(user));
+  sessionStorage.setItem("userRole", user.role || "");
+  sessionStorage.setItem("userName", user.first_name || user.email || "User");
 };
 
 export const getStoredUser = (): User | null => {
-  const raw = localStorage.getItem(USER_KEY);
+  const raw = sessionStorage.getItem(USER_KEY);
   if (!raw) {
     return null;
   }
@@ -17,14 +17,14 @@ export const getStoredUser = (): User | null => {
   try {
     return JSON.parse(raw) as User;
   } catch {
-    localStorage.removeItem(USER_KEY);
+    sessionStorage.removeItem(USER_KEY);
     return null;
   }
 };
 
 export const clearUserSession = () => {
-  localStorage.removeItem(USER_KEY);
-  localStorage.removeItem("userRole");
-  localStorage.removeItem("userName");
-  localStorage.removeItem("authToken");
+  sessionStorage.removeItem(USER_KEY);
+  sessionStorage.removeItem("userRole");
+  sessionStorage.removeItem("userName");
+  sessionStorage.removeItem("authToken");
 };

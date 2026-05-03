@@ -8,18 +8,17 @@ from django.utils import timezone
 from geopy.geocoders import Nominatim
 from rest_framework import generics, permissions, serializers, status
 from rest_framework.authtoken.models import Token
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .filters import CustomInBBoxFilter
-from .models import Delivery, Item, Request, UserProfile, VolunteerLocation
-from .notifications import send_donation_notification_to_volunteers
+from .models import Delivery, Item, Request, UserProfile
 from .serializers import (
     ItemSerializer,
     RequestSerializer,
     RequestStatusUpdateSerializer,
     UserProfileSerializer,
-    VolunteerLocationSerializer,
 )
 
 logger = logging.getLogger(__name__)
@@ -35,9 +34,8 @@ def _live_items_queryset(queryset):
 
 def _sync_delivery_to_request(delivery):
     request_obj = delivery.request
-    request_obj.volunteer = delivery.volunteer
     request_obj.delivery_status = delivery.status
-    update_fields = ['volunteer', 'delivery_status', 'updated_at']
+    update_fields = ['delivery_status', 'updated_at']
     if delivery.status == 'assigned' and not request_obj.assigned_at:
         request_obj.assigned_at = timezone.now()
         update_fields.append('assigned_at')
@@ -112,11 +110,6 @@ def _apply_delivery_status_update(delivery, new_status):
     if simulated_lat is not None and simulated_lng is not None:
         delivery.current_latitude = simulated_lat
         delivery.current_longitude = simulated_lng
-        if delivery.volunteer_id:
-            VolunteerLocation.objects.update_or_create(
-                volunteer=delivery.volunteer,
-                defaults={'latitude': simulated_lat, 'longitude': simulated_lng},
-            )
 
     delivery.tracking_note = _build_tracking_note(new_status)
     delivery.save()
@@ -124,20 +117,7 @@ def _apply_delivery_status_update(delivery, new_status):
     return delivery
 
 
-def _auto_assign_volunteer_if_available(request_obj):
-    volunteer = (
-        UserProfile.objects.filter(role='volunteer')
-        .annotate(active_deliveries=Count('delivery_assignments', filter=~Q(delivery_assignments__status='delivered')))
-        .order_by('active_deliveries', 'id')
-        .first()
-    )
-    if not volunteer:
-        return None
 
-    delivery = Delivery.objects.get(request=request_obj)
-    delivery.volunteer = volunteer
-    _apply_delivery_status_update(delivery, 'assigned')
-    return delivery
 
 
 class GeocodeView(APIView):
@@ -183,11 +163,9 @@ class ItemListCreateView(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         if not self.request.user.is_authenticated:
             raise serializers.ValidationError("Authentication required.")
+        if self.request.user.role == 'donor' and not self.request.user.is_verified:
+            raise PermissionDenied("Pending admin verification.")
         item = serializer.save(donor=self.request.user)
-        try:
-            send_donation_notification_to_volunteers(item)
-        except Exception as exc:
-            logger.error("Failed to send notification to volunteers: %s", exc, exc_info=True)
 
 
 class ItemDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -314,22 +292,19 @@ class RequestListCreateView(generics.ListCreateAPIView):
             'item',
             'item__donor',
             'requester',
-            'volunteer',
         ).order_by('-updated_at', '-created_at')
         role = getattr(self.request.user, 'role', None)
         scope = self.request.query_params.get('scope')
 
-        if scope == 'all' and role == 'volunteer':
-            return queryset.filter(status='Accepted')
         if role == 'donor':
             return queryset.filter(item__donor=self.request.user)
-        if role == 'volunteer':
-            return queryset.filter(Q(volunteer=self.request.user) | Q(volunteer__isnull=True, status='Accepted'))
         return queryset.filter(requester=self.request.user)
 
     def perform_create(self, serializer):
         if not self.request.user.is_authenticated:
             raise serializers.ValidationError("Authentication required.")
+        if self.request.user.role == 'recipient' and not self.request.user.is_verified:
+            raise PermissionDenied("Pending admin verification.")
         with transaction.atomic():
             item = serializer.validated_data['item']
             if not item.is_available or item.expiry_date < timezone.localdate():
@@ -347,13 +322,12 @@ class RequestListCreateView(generics.ListCreateAPIView):
             Delivery.objects.create(
                 request=created_request,
                 status='pending',
-                tracking_note='Request accepted. Waiting for volunteer assignment.',
+                tracking_note='Request accepted. Offline delivery to be organized.',
             )
-            _auto_assign_volunteer_if_available(created_request)
 
 
 class RequestDetailView(generics.RetrieveUpdateAPIView):
-    queryset = Request.objects.select_related('item', 'item__donor', 'requester', 'volunteer')
+    queryset = Request.objects.select_related('item', 'item__donor', 'requester')
     serializer_class = RequestSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -385,52 +359,12 @@ class RequestDetailView(generics.RetrieveUpdateAPIView):
 
             return Response({'message': 'Claim cancelled successfully.'}, status=status.HTTP_200_OK)
 
-        if role == 'volunteer' and action == 'claim':
-            if delivery_request.volunteer and delivery_request.volunteer != user:
-                return Response({'error': 'This delivery is already assigned.'}, status=status.HTTP_409_CONFLICT)
-            delivery, _ = Delivery.objects.get_or_create(
-                request=delivery_request,
-                defaults={'status': 'assigned', 'tracking_note': 'Volunteer assigned.'}
-            )
-            delivery.volunteer = user
-            _apply_delivery_status_update(delivery, 'assigned')
-            delivery_request.refresh_from_db()
-            return Response(RequestSerializer(delivery_request).data)
 
-        if role == 'volunteer':
-            if delivery_request.volunteer_id != user.id:
-                return Response({'error': 'Only the assigned volunteer can update this delivery.'}, status=status.HTTP_403_FORBIDDEN)
-
-            serializer = self.get_serializer(delivery_request, data=request.data, partial=True)
-            serializer.is_valid(raise_exception=True)
-            new_status = serializer.validated_data['delivery_status']
-            delivery, _ = Delivery.objects.get_or_create(request=delivery_request)
-            _apply_delivery_status_update(delivery, new_status)
-            delivery_request.refresh_from_db()
-            return Response(RequestSerializer(delivery_request).data)
 
         return Response({'error': 'This action is not allowed for your role.'}, status=status.HTTP_403_FORBIDDEN)
 
 
-class VolunteerLocationView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
 
-    def get(self, request):
-        if request.user.role != 'volunteer':
-            return Response({'error': 'Volunteer access only.'}, status=status.HTTP_403_FORBIDDEN)
-
-        location, _ = VolunteerLocation.objects.get_or_create(volunteer=request.user)
-        return Response(VolunteerLocationSerializer(location).data)
-
-    def post(self, request):
-        if request.user.role != 'volunteer':
-            return Response({'error': 'Volunteer access only.'}, status=status.HTTP_403_FORBIDDEN)
-
-        location, _ = VolunteerLocation.objects.get_or_create(volunteer=request.user)
-        serializer = VolunteerLocationSerializer(location, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save(volunteer=request.user)
-        return Response(serializer.data)
 
 
 class DashboardSummaryView(APIView):
@@ -453,16 +387,7 @@ class DashboardSummaryView(APIView):
                 'total_requests': requests.count(),
                 'delivered_requests': requests.filter(delivery_status='delivered').count(),
             }
-        elif role == 'volunteer':
-            requests = Request.objects.filter(Q(volunteer=user) | Q(volunteer__isnull=True, status='Accepted'))
-            active = requests.exclude(delivery_status='delivered')
-            data = {
-                'role': role,
-                'open_deliveries': requests.filter(volunteer__isnull=True, status='Accepted').count(),
-                'my_active_deliveries': active.filter(volunteer=user).count(),
-                'completed_deliveries': requests.filter(volunteer=user, delivery_status='delivered').count(),
-                'response_rate': requests.filter(volunteer=user).count(),
-            }
+
         else:
             requests = Request.objects.filter(requester=user)
             delivered = requests.filter(delivery_status='delivered').count()
@@ -484,41 +409,13 @@ class DashboardSummaryView(APIView):
         return Response(data)
 
 
-class AssignVolunteerView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
 
-    def post(self, request):
-        if not _role_required(request.user, 'volunteer'):
-            return Response({'error': 'Volunteer access only.'}, status=status.HTTP_403_FORBIDDEN)
-
-        request_id = request.data.get('request_id')
-        if not request_id:
-            return Response({'error': 'request_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            request_obj = Request.objects.select_related('volunteer').get(pk=request_id)
-        except Request.DoesNotExist:
-            return Response({'error': 'Request not found.'}, status=status.HTTP_404_NOT_FOUND)
-
-        delivery, _ = Delivery.objects.get_or_create(
-            request=request_obj,
-            defaults={'status': 'assigned', 'tracking_note': 'Volunteer assigned.'}
-        )
-        if delivery.volunteer and delivery.volunteer_id != request.user.id:
-            return Response({'error': 'Delivery is already assigned.'}, status=status.HTTP_409_CONFLICT)
-
-        delivery.volunteer = request.user
-        _apply_delivery_status_update(delivery, 'assigned')
-        request_obj.refresh_from_db()
-        return Response(RequestSerializer(request_obj).data, status=status.HTTP_200_OK)
 
 
 class UpdateDeliveryStatusView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        if not _role_required(request.user, 'volunteer'):
-            return Response({'error': 'Volunteer access only.'}, status=status.HTTP_403_FORBIDDEN)
 
         request_id = request.data.get('request_id')
         delivery_status = request.data.get('status')
@@ -535,10 +432,6 @@ class UpdateDeliveryStatusView(APIView):
             return Response({'error': 'Request not found.'}, status=status.HTTP_404_NOT_FOUND)
 
         delivery, _ = Delivery.objects.get_or_create(request=request_obj)
-        if delivery.volunteer_id and delivery.volunteer_id != request.user.id:
-            return Response({'error': 'Only assigned volunteer can update status.'}, status=status.HTTP_403_FORBIDDEN)
-        if not delivery.volunteer_id:
-            delivery.volunteer = request.user
 
         _apply_delivery_status_update(delivery, delivery_status)
 
